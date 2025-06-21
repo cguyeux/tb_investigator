@@ -153,6 +153,7 @@ sra_list = {
 
 # bwa index H37Rv.fasta
 os.system("mkdir -p fastq")
+os.system("mkdir -p fastq/cleaned")
 os.system("mkdir -p alignments")
 os.system("mkdir -p unmapped")
 os.system("mkdir -p assemblies_unmapped")
@@ -178,8 +179,26 @@ for SRR in sra_list:
     if f"{SRR}_mapped_contigs.fasta" not in os.listdir("contigs_mapped/"):    
         print(f" - On téléchage {SRR} ({sra_list[SRR]})")
         os.system(f"fasterq-dump -e 16 --split-files --force --outdir fastq {SRR}")
+        print(f" - Nettoyage {SRR} ({sra_list[SRR]})")
+        subprocess.run(
+            [
+                "python3",
+                "preprocess_reads.py",
+                "-1",
+                f"fastq/{SRR}_1.fastq",
+                "-2",
+                f"fastq/{SRR}_2.fastq",
+                "-o",
+                f"fastq/cleaned/{SRR}",
+                "--threads",
+                "16",
+            ],
+            check=True,
+        )
         print(f" - On aligne {SRR} ({sra_list[SRR]})")
-        os.system(f"bwa mem -t 16 data/H37Rv.fasta fastq/{SRR}_1.fastq fastq/{SRR}_2.fastq > alignments/{SRR}.sam")
+        os.system(
+            f"bwa mem -t 16 data/H37Rv.fasta fastq/cleaned/{SRR}_1.fastq fastq/cleaned/{SRR}_2.fastq > alignments/{SRR}.sam"
+        )
         os.system(f"samtools view -bS alignments/{SRR}.sam | samtools sort -o alignments/{SRR}_sorted.bam")
         os.system(f"rm -f alignments/{SRR}.sam")
         os.system(f"samtools index alignments/{SRR}_sorted.bam")
