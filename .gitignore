@@ -1,0 +1,5 @@
+mydb*
+*mapped*
+data/
+fastq/
+alignments/
