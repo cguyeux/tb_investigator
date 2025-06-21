@@ -150,15 +150,8 @@ sra_list = {
     "ERR970410": "Suricattae",
 }
 
-os.system("mkdir -p fastq")
-
-for srr in sra_list:
-    if srr not in [k.split('_')[0] for k in os.listdir("fastq/")]:
-        print(f" - On téléchage {srr} ({sra_list[srr]})")
-        os.system(f"fasterq-dump --split-files --outdir fastq {srr}")
-
-
 # bwa index H37Rv.fasta
+os.system("mkdir -p fastq")
 os.system("mkdir -p alignments")
 os.system("mkdir -p unmapped")
 os.system("mkdir -p assemblies_unmapped")
@@ -170,7 +163,9 @@ os.system("mkdir -p contigs_mapped")
 
 
 for SRR in sra_list:
-    if f"{SRR}.sam" not in os.listdir("alignments/"):
+    if f"{SRR}_mapped_contigs.fasta" not in os.listdir("contigs_mapped/"):    
+        print(f" - On téléchage {SRR} ({sra_list[SRR]})")
+        os.system(f"fasterq-dump --split-files --outdir fastq {SRR}")
         print(f" - On aligne {SRR} ({sra_list[SRR]})")
         os.system(f"bwa mem -t 16 data/H37Rv.fasta fastq/{SRR}_1.fastq fastq/{SRR}_2.fastq > alignments/{SRR}.sam")
         os.system(f"samtools view -bS alignments/{SRR}.sam | samtools sort -o alignments/{SRR}_sorted.bam")
