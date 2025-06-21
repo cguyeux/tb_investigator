@@ -213,6 +213,7 @@ for SRR in sra_list:
         assembled = f"{outdir}/contigs.fasta"
         if os.path.exists(assembled):
             os.rename(assembled, contigs)
+        os.system(f"rm -f fastq/{SRR}*fastq")
         stop = True
     elif f"{SRR}.sam" in os.listdir("alignments/"):    
         os.system(f"rm -f alignments/{SRR}.sam")
