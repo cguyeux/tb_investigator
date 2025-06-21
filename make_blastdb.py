@@ -177,7 +177,7 @@ stop = False
 for SRR in sra_list:
     if f"{SRR}_mapped_contigs.fasta" not in os.listdir("contigs_mapped/"):    
         print(f" - On téléchage {SRR} ({sra_list[SRR]})")
-        os.system(f"fasterq-dump -e 10 --split-files --force --outdir fastq {SRR}")
+        os.system(f"fasterq-dump -e 16 --split-files --force --outdir fastq {SRR}")
         print(f" - On aligne {SRR} ({sra_list[SRR]})")
         os.system(f"bwa mem -t 16 data/H37Rv.fasta fastq/{SRR}_1.fastq fastq/{SRR}_2.fastq > alignments/{SRR}.sam")
         os.system(f"samtools view -bS alignments/{SRR}.sam | samtools sort -o alignments/{SRR}_sorted.bam")
