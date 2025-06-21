@@ -23,3 +23,15 @@ pip install cutadapt
 
 This will produce `trimmed/sample_1.fastq` and `trimmed/sample_2.fastq` with
 adapter sequences removed and low-quality bases trimmed.
+
+## Assemblage avec SPAdes
+
+Le script `make_blastdb.py` assemble les lectures non mappées et mappées avec
+**SPAdes**. Les valeurs passées à l'option `-k` sont déterminées
+automatiquement à partir de la longueur des lectures du fichier FASTQ. Les
+tailles de k-mers 21, 33, 55, 77, 99 et 127 sont filtrées pour ne conserver que
+celles strictement inférieures à la longueur des lectures.
+
+Par exemple, pour des lectures de 150 nt, tous les k-mers précédents sont
+utilisés, alors que pour des lectures de 100 nt seuls `21,33,55,77,99` seront
+passés à SPAdes.
