@@ -1,5 +1,6 @@
 import os
 import subprocess
+import unicodedata
 
 sra_list = {
     "SRR32024533": "M. riyadhense",
@@ -258,6 +259,7 @@ for SRR in sra_list:
             debut = int(debut)
             fin = int(fin)
             nom = nom.rstrip(' ')
+            nom = unicodedata.normalize('NFKD', nom).encode('ascii', 'ignore').decode('ascii')
             nom = nom.replace(' ', '_').replace('/', '-')
             print(debut)
             print(fin)
