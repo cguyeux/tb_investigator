@@ -161,14 +161,26 @@ os.system("mkdir -p mapped")
 os.system("mkdir -p assemblies_mapped")
 os.system("mkdir -p contigs_mapped")
 
+def concat(fasta_file, motif_source='', motif_cible=''):
+    print(motif_source)
+    print(motif_cible)
+    with open(fasta_file, 'r') as f:
+        fasta = f.read()
+    if len(motif_source)>0:
+        fasta = fasta.replace(motif_source, motif_cible)
+    with open('data/all_contigs.fasta', 'a') as f:
+        f.write('\n')
+        f.write(fasta)
 
+stop = False
 for SRR in sra_list:
     if f"{SRR}_mapped_contigs.fasta" not in os.listdir("contigs_mapped/"):    
         print(f" - On téléchage {SRR} ({sra_list[SRR]})")
-        os.system(f"fasterq-dump --split-files --outdir fastq {SRR}")
+        os.system(f"fasterq-dump -e 10 --split-files --force --outdir fastq {SRR}")
         print(f" - On aligne {SRR} ({sra_list[SRR]})")
         os.system(f"bwa mem -t 16 data/H37Rv.fasta fastq/{SRR}_1.fastq fastq/{SRR}_2.fastq > alignments/{SRR}.sam")
         os.system(f"samtools view -bS alignments/{SRR}.sam | samtools sort -o alignments/{SRR}_sorted.bam")
+        os.system(f"rm -f alignments/{SRR}.sam")
         os.system(f"samtools index alignments/{SRR}_sorted.bam")
         # Extraction en BAM des reads non mappés (les deux mates non mappés)
         os.system(f"samtools view -b -f 12 -F 256 alignments/{SRR}_sorted.bam > unmapped/{SRR}_unmapped.bam")
@@ -177,10 +189,13 @@ for SRR in sra_list:
         # Assemblage unmapped
         outdir = f"assemblies_unmapped/{SRR}"
         contigs = f"contigs_unmapped/{SRR}_unmapped_contigs.fasta"
-        os.system(f"spades.py -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -o {outdir}")
+        os.system(f"spades.py --careful -t 16  --cov-cutoff auto -k 21,33,55,77,99,127 -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -o {outdir}")
         assembled = f"{outdir}/contigs.fasta"
         if os.path.exists(assembled):
             os.rename(assembled, contigs)
+        stop = True
+    elif f"{SRR}.sam" in os.listdir("alignments/"):    
+        os.system(f"rm -f alignments/{SRR}.sam")
 
     sorted_bam = f"alignments/{SRR}_sorted.bam"
     
@@ -207,63 +222,56 @@ for SRR in sra_list:
         if os.path.exists(assembled_m):
             os.rename(assembled_m, contigs_m)
 
-os.system('rm -f data/all_contigs.fasta')
 
-def concat(fasta_file, motif_source='', motif_cible=''):
-    print(motif_source)
-    print(motif_cible)
-    with open(fasta_file, 'r') as f:
-        fasta = f.read()
-    if len(motif_source)>0:
-        fasta = fasta.replace(motif_source, motif_cible)
-    with open('data/all_contigs.fasta', 'a') as f:
-        f.write('\n')
-        f.write(fasta)
+    os.system('rm -f data/all_contigs.fasta')
 
-for rep in ['data/sequences', 'data/sequences/IS', 'data/sequences/CDS']:
-    for seq in os.listdir(rep):
-        if seq.endswith('fasta'):
-            concat(f'{rep}/{seq}')
+    for rep in ['data/sequences', 'data/sequences/IS', 'data/sequences/CDS']:
+        for seq in os.listdir(rep):
+            if seq.endswith('fasta'):
+                concat(f'{rep}/{seq}')
 
-for contigs in os.listdir("contigs_unmapped"):
-    sra = contigs.split('_')[0]
-    concat(
-        f"contigs_unmapped/{contigs}", 
-        motif_source='>NODE_', 
-        motif_cible=f'>{sra}_{sra_list[sra]}_unmapped_NODE_'
-    )
+    for contigs in os.listdir("contigs_unmapped"):
+        sra = contigs.split('_')[0]
+        concat(
+            f"contigs_unmapped/{contigs}", 
+            motif_source='>NODE_', 
+            motif_cible=f'>{sra}_{sra_list[sra]}_unmapped_NODE_'
+        )
 
-for contigs in os.listdir("contigs_mapped"):
-    sra = contigs.split('_')[0]
-    concat(
-        f"contigs_mapped/{contigs}",
-        motif_source='>NODE_',
-        motif_cible=f'>{sra}_{sra_list[sra]}_mapped_NODE_'
-    )
-    
-concat("data/H37Rv.fasta")
+    for contigs in os.listdir("contigs_mapped"):
+        sra = contigs.split('_')[0]
+        concat(
+            f"contigs_mapped/{contigs}",
+            motif_source='>NODE_',
+            motif_cible=f'>{sra}_{sra_list[sra]}_mapped_NODE_'
+        )
+        
+    concat("data/H37Rv.fasta")
 
-H37Rv = open('data/H37Rv.fasta').read()
-H37Rv = ''.join(H37Rv.split('\n')[1:])
+    H37Rv = open('data/H37Rv.fasta').read()
+    H37Rv = ''.join(H37Rv.split('\n')[1:])
 
-with open('data/rd.bed') as f:
-    RDs = f.read()
-    for rd in RDs.split('\n')[:-1]:
-        _, debut, fin, nom = rd.split('\t')
-        debut = int(debut)
-        fin = int(fin)
-        nom = nom.rstrip(' ')
-        nom = nom.replace(' ', '_').replace('/', '-')
-        print(debut)
-        print(fin)
-        print(nom)
-        assert debut < fin
-        with open(f'data/RD/{nom}.fasta', 'w') as f:
-            f.write(f'>{nom}\n')
-            f.write(H37Rv[debut-1:fin-1])    
-        concat(f"data/RD/{nom}.fasta")
-    
+    with open('data/rd.bed') as f:
+        RDs = f.read()
+        for rd in RDs.split('\n')[:-1]:
+            _, debut, fin, nom = rd.split('\t')
+            debut = int(debut)
+            fin = int(fin)
+            nom = nom.rstrip(' ')
+            nom = nom.replace(' ', '_').replace('/', '-')
+            print(debut)
+            print(fin)
+            print(nom)
+            assert debut < fin
+            with open(f'data/RD/{nom}.fasta', 'w') as f:
+                f.write(f'>{nom}\n')
+                f.write(H37Rv[debut-1:fin-1])    
+            concat(f"data/RD/{nom}.fasta")
+        
 
-os.system(f"makeblastdb -in data/all_contigs.fasta -dbtype nucl -out mydb")
+    os.system(f"makeblastdb -in data/all_contigs.fasta -dbtype nucl -out mydb")
+    if stop:
+        exit()    
+
 # blastn -query data/sequences/TbD1.fasta -db mydb
 
