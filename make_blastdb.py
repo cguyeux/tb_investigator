@@ -2,6 +2,22 @@ import os
 import subprocess
 import unicodedata
 
+
+def get_read_length(fastq_file: str) -> int:
+    """Return the length of the first read found in ``fastq_file``."""
+    with open(fastq_file) as fh:
+        fh.readline()
+        seq = fh.readline().strip()
+    return len(seq)
+
+
+def choose_k_values(fastq_file: str) -> str:
+    """Select SPAdes -k values according to read length."""
+    length = get_read_length(fastq_file)
+    candidates = [21, 33, 55, 77, 99, 127]
+    selected = [k for k in candidates if k < length]
+    return ",".join(str(k) for k in selected)
+
 sra_list = {
     "SRR32024533": "M. riyadhense",
     "SRR30899481": "M. shinjukuense",
@@ -209,7 +225,10 @@ for SRR in sra_list:
         # Assemblage unmapped
         outdir = f"assemblies_unmapped/{SRR}"
         contigs = f"contigs_unmapped/{SRR}_unmapped_contigs.fasta"
-        os.system(f"spades.py --careful -t 16  --cov-cutoff auto -k 21,33,55,77,99,127 -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -o {outdir}")
+        k_values = choose_k_values(f"unmapped/{SRR}_unmapped_1.fastq")
+        os.system(
+            f"spades.py --careful -t 16 --cov-cutoff auto -k {k_values} -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -o {outdir}"
+        )
         assembled = f"{outdir}/contigs.fasta"
         if os.path.exists(assembled):
             os.rename(assembled, contigs)
@@ -238,7 +257,10 @@ for SRR in sra_list:
     outdir_m = f"assemblies_mapped/{SRR}"
     contigs_m = f"contigs_mapped/{SRR}_mapped_contigs.fasta"
     if not os.path.exists(contigs_m):
-        os.system(f"spades.py -1 {mapped_fastq1} -2 {mapped_fastq2} -o {outdir_m}")
+        k_values = choose_k_values(mapped_fastq1)
+        os.system(
+            f"spades.py -k {k_values} -1 {mapped_fastq1} -2 {mapped_fastq2} -o {outdir_m}"
+        )
         assembled_m = f"{outdir_m}/contigs.fasta"
         if os.path.exists(assembled_m):
             os.rename(assembled_m, contigs_m)
