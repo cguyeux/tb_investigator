@@ -2,6 +2,10 @@ import os
 import pickle
 import subprocess
 import unicodedata
+from typing import List
+
+import pandas as pd
+from Bio import SeqIO
 
 
 def get_read_length(fastq_file: str) -> int:
@@ -18,6 +22,78 @@ def choose_k_values(fastq_file: str) -> str:
     candidates = [21, 33, 55, 77, 99, 127]
     selected = [k for k in candidates if k < length]
     return ",".join(str(k) for k in selected)
+
+
+def build_rd_fasta(rd_dir: str, rd_fasta: str) -> None:
+    """Concatenate all RD FASTA files found in ``rd_dir``."""
+    with open(rd_fasta, "w") as out:
+        for fname in sorted(os.listdir(rd_dir)):
+            if not fname.endswith(".fasta"):
+                continue
+            with open(os.path.join(rd_dir, fname)) as fh:
+                content = fh.read()
+                out.write(content)
+                if not content.endswith("\n"):
+                    out.write("\n")
+
+
+def analyze_absent_regions(srr: str, bam: str, h37rv_fasta: str, rd_dir: str,
+                           results_dir: str = "results") -> None:
+    """Extract H37Rv regions absent from ``bam`` and BLAST them against RDs."""
+
+    os.makedirs(results_dir, exist_ok=True)
+    zero_cov = os.path.join(results_dir, f"{srr}_zero_coverage.bed")
+    merged_bed = os.path.join(results_dir, f"{srr}_zero_coverage_merged.bed")
+    absent_fasta = os.path.join(results_dir, f"{srr}_absent_regions.fasta")
+    rd_fasta = os.path.join(results_dir, "RD_all.fasta")
+    blast_db = os.path.join(results_dir, "RD_db")
+    blast_out = os.path.join(results_dir, f"{srr}_blast.txt")
+    csv_out = os.path.join(results_dir, f"{srr}_rd.csv")
+
+    # Coverage and regions absent from H37Rv
+    subprocess.run(
+        f"bedtools genomecov -d -ibam {bam} | awk '$3==0' | "
+        f"awk '{{print $1\t$2-1\t$2}}' > {zero_cov}",
+        shell=True,
+        check=True,
+    )
+    subprocess.run(f"bedtools merge -i {zero_cov} > {merged_bed}", shell=True, check=True)
+    subprocess.run(
+        f"bedtools getfasta -fi {h37rv_fasta} -bed {merged_bed} -fo {absent_fasta}",
+        shell=True,
+        check=True,
+    )
+
+    # Prepare RD database
+    build_rd_fasta(rd_dir, rd_fasta)
+    subprocess.run(f"makeblastdb -in {rd_fasta} -dbtype nucl -out {blast_db}", shell=True, check=True)
+    subprocess.run(
+        f"blastn -query {absent_fasta} -db {blast_db} "
+        "-outfmt '6 qseqid sseqid pident length bitscore evalue qstart qend sstart send' "
+        f"-max_target_seqs 1 -evalue 1e-5 -out {blast_out}",
+        shell=True,
+        check=True,
+    )
+
+    cols = [
+        "qseqid",
+        "sseqid",
+        "pident",
+        "length",
+        "bitscore",
+        "evalue",
+        "qstart",
+        "qend",
+        "sstart",
+        "send",
+    ]
+    blast_df = pd.read_csv(blast_out, sep="\t", names=cols)
+
+    bed_df = pd.read_csv(merged_bed, sep="\t", names=["chrom", "start", "end"])
+    bed_df["qseqid"] = [rec.id for rec in SeqIO.parse(absent_fasta, "fasta")]
+
+    final_df = bed_df.merge(blast_df, on="qseqid", how="left")
+    final_df.to_csv(csv_out, index=False)
 
 sra_list = {
     "SRR32024533": "M. riyadhense",
@@ -217,6 +293,14 @@ for SRR in [u for u in sra_list if u not in done]:
     os.system(f"samtools view -bS alignments/{SRR}.sam | samtools sort -o alignments/{SRR}_sorted.bam")
     os.system(f"rm -f alignments/{SRR}.sam")
     os.system(f"samtools index alignments/{SRR}_sorted.bam")
+
+    analyze_absent_regions(
+        srr=SRR,
+        bam=f"alignments/{SRR}_sorted.bam",
+        h37rv_fasta="data/H37Rv.fasta",
+        rd_dir="data/RD",
+    )
+
     # Extraction en BAM des reads non mappés (les deux mates non mappés)
     os.system(f"samtools view -b -f 12 -F 256 alignments/{SRR}_sorted.bam > unmapped/{SRR}_unmapped.bam")
     # Extraction en fastq directement avec samtools
