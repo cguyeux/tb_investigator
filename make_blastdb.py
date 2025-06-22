@@ -51,9 +51,11 @@ def analyze_absent_regions(srr: str, bam: str, h37rv_fasta: str, rd_dir: str,
     csv_out = os.path.join(results_dir, f"{sra_list[srr].replace(' ', '')}_{srr}_rd.csv")
 
     # Coverage and regions absent from H37Rv
+    # Extract zero coverage positions as a proper BED file
     subprocess.run(
-        f"bedtools genomecov -d -ibam {bam} | awk '$3==0' | "
-        f"awk '{{print $1\t$2-1\t$2}}' > {zero_cov}",
+        f"bedtools genomecov -d -ibam {bam} | "
+        "awk '$3==0 {printf(\"%s\\t%d\\t%d\\n\", $1, $2-1, $2)}' "
+        f"> {zero_cov}",
         shell=True,
         check=True,
     )
