@@ -90,11 +90,30 @@ def analyze_absent_regions(srr: str, bam: str, h37rv_fasta: str, rd_dir: str,
         "send",
     ]
     blast_df = pd.read_csv(blast_out, sep="\t", names=cols)
+    blast_df.rename(columns={"length": "aln_length"}, inplace=True)
 
     bed_df = pd.read_csv(merged_bed, sep="\t", names=["chrom", "start", "end"])
     bed_df["qseqid"] = [rec.id for rec in SeqIO.parse(absent_fasta, "fasta")]
+    bed_df["region_length"] = bed_df["end"] - bed_df["start"]
 
     final_df = bed_df.merge(blast_df, on="qseqid", how="left")
+    col_order = [
+        "chrom",
+        "start",
+        "end",
+        "region_length",
+        "qseqid",
+        "sseqid",
+        "pident",
+        "aln_length",
+        "bitscore",
+        "evalue",
+        "qstart",
+        "qend",
+        "sstart",
+        "send",
+    ]
+    final_df = final_df[col_order]
     final_df.to_csv(csv_out, index=False)
 
 sra_list = {
