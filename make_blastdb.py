@@ -1,4 +1,5 @@
 import os
+import pickle
 import subprocess
 import unicodedata
 
@@ -45,22 +46,29 @@ sra_list = {
     "ERR2513449": "L3",
     "ERR4816244": "L3",
     "ERR4831956": "L2.1 proto",
-    "SRR1710059": "L2.1 proto",
     "ERR4831637": "L2.1 proto",
     "SRR5065500": "L2.2",
-    "ERR551809": "L2.2",
-    "ERR019862": "L2.2",
+    "ERR551809": "L2.2", 
+    "ERR234202": "L5", 
+    "ERR6866750": "L4.1",
+    "SRR23861992": "L4.2",
+    "ERR1193816": "L4.17",
+    "SRR13736067": "L4.9 H37Rv",
+    "ERR552768": "Pinipedii",
+    "ERR552037": "Microti",
+    "ERR2707158": "L10", 
+    "ERR4815138": "L6.1",
+    "ERR181315": "L9",
+    "SRR3500411": "Mungi", #
+    "SRR3745458": "Dassie",
     "SRR12420419": "L2.2",
     "ERR4810586": "L2.2",
-    "ERR6866750": "L4.1",
     "SRR26112465": "L4.1",
     "ERR11466175": "L4.1",
     "SRR16087965": "L4.1",
-    "SRR23861992": "L4.2",
     "SRR3082077": "L4.2",
     "ERR5865631": "L4.2",
     "SRR28498548": "L4.2",
-    "ERR1193816": "L4.17",
     "ERR2791547": "L4.17",
     "ERR4821894": "L4.17",
     "ERR4822579": "L4.18",
@@ -117,17 +125,13 @@ sra_list = {
     "ERR2513858": "L4.9",
     "ERR11466257": "L4.9",
     "ERR4553799": "L4.9",
-    "SRR13736067": "L4.9 H37Rv",
     "ERR5979827": "L4.9 H37Rv",
     "SRR23080319": "L4.9 H37Rv",
-    "ERR234202": "L5",
     "ERR017801": "L5",
     "ERR5336143": "L5",
     "ERR1082132": "L5",
-    "ERR552768": "Pinipedii",
     "SRR1239339": "Pinipedii",
     "SRR7693090": "Pinipedii",
-    "ERR552037": "Microti",
     "ERR4627394": "Microti",
     "ERR2659166": "Microti",
     "SRR16058599": "Orygis La3",
@@ -143,9 +147,7 @@ sra_list = {
     "SRR3135069": "La4",
     "DRR120408": "La4",
     "SRR16503843": "La4",
-    "ERR2707158": "L10",
     "ERR2516384": "L10",
-    "ERR4815138": "L6.1",
     "ERR9787035": "L6.1",
     "ERR1023243": "L6.1",
     "ERR10680128": "L6.2",
@@ -154,11 +156,8 @@ sra_list = {
     "ERR3806601": "L6.3",
     "ERR439992": "L6.3",
     "ERR1023286": "L6.3",
-    "ERR181315": "L9",
     "ERR2514391": "L9",
     "SRR24827312": "L9",
-    "SRR3500411": "Mungi",
-    "SRR3745458": "Dassie",
     "SRR3745456": "Dassie",
     "SRR3745457": "Dassie",
     "ERR713575": "Chimpanze",
@@ -180,8 +179,6 @@ os.system("mkdir -p assemblies_mapped")
 os.system("mkdir -p contigs_mapped")
 
 def concat(fasta_file, motif_source='', motif_cible=''):
-    print(motif_source)
-    print(motif_cible)
     with open(fasta_file, 'r') as f:
         fasta = f.read()
     if len(motif_source)>0:
@@ -190,52 +187,52 @@ def concat(fasta_file, motif_source='', motif_cible=''):
         f.write('\n')
         f.write(fasta)
 
-stop = False
-for SRR in sra_list:
-    if f"{SRR}_mapped_contigs.fasta" not in os.listdir("contigs_mapped/"):    
-        print(f" - On téléchage {SRR} ({sra_list[SRR]})")
-        os.system(f"fasterq-dump -e 16 --split-files --force --outdir fastq {SRR}")
-        print(f" - Nettoyage {SRR} ({sra_list[SRR]})")
-        subprocess.run(
-            [
-                "python3",
-                "preprocess_reads.py",
-                "-1",
-                f"fastq/{SRR}_1.fastq",
-                "-2",
-                f"fastq/{SRR}_2.fastq",
-                "-o",
-                f"fastq/cleaned/{SRR}",
-                "--threads",
-                "16",
-            ],
-            check=True,
-        )
-        print(f" - On aligne {SRR} ({sra_list[SRR]})")
-        os.system(
-            f"bwa mem -t 16 data/H37Rv.fasta fastq/cleaned/{SRR}_1.fastq fastq/cleaned/{SRR}_2.fastq > alignments/{SRR}.sam"
-        )
-        os.system(f"samtools view -bS alignments/{SRR}.sam | samtools sort -o alignments/{SRR}_sorted.bam")
-        os.system(f"rm -f alignments/{SRR}.sam")
-        os.system(f"samtools index alignments/{SRR}_sorted.bam")
-        # Extraction en BAM des reads non mappés (les deux mates non mappés)
-        os.system(f"samtools view -b -f 12 -F 256 alignments/{SRR}_sorted.bam > unmapped/{SRR}_unmapped.bam")
-        # Extraction en fastq directement avec samtools
-        os.system(f"samtools fastq -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -0 /dev/null -s /dev/null -n unmapped/{SRR}_unmapped.bam")
-        # Assemblage unmapped
-        outdir = f"assemblies_unmapped/{SRR}"
-        contigs = f"contigs_unmapped/{SRR}_unmapped_contigs.fasta"
-        k_values = choose_k_values(f"unmapped/{SRR}_unmapped_1.fastq")
-        os.system(
-            f"spades.py --careful -t 16 --cov-cutoff auto -k {k_values} -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -o {outdir}"
-        )
-        assembled = f"{outdir}/contigs.fasta"
-        if os.path.exists(assembled):
-            os.rename(assembled, contigs)
-        os.system(f"rm -f fastq/{SRR}*fastq")
-        stop = True
-    elif f"{SRR}.sam" in os.listdir("alignments/"):    
-        os.system(f"rm -f alignments/{SRR}.sam")
+with open('done.pkl', 'rb') as f:
+     done = pickle.load(f)
+
+
+for SRR in [u for u in sra_list if u not in done]:
+    print(f" - On téléchage {SRR} ({sra_list[SRR]})")
+    os.system(f"fasterq-dump -e 16 --split-files --force --outdir fastq {SRR}")
+    print(f" - Nettoyage {SRR} ({sra_list[SRR]})")
+    subprocess.run(
+        [
+            "python3",
+            "preprocess_reads.py",
+            "-1",
+            f"fastq/{SRR}_1.fastq",
+            "-2",
+            f"fastq/{SRR}_2.fastq",
+            "-o",
+            f"fastq/cleaned/{SRR}",
+            "--threads",
+            "16",
+        ],
+        check=True,
+    )
+    print(f" - On aligne {SRR} ({sra_list[SRR]})")
+    os.system(
+        f"bwa mem -t 16 data/H37Rv.fasta fastq/cleaned/{SRR}_1.fastq fastq/cleaned/{SRR}_2.fastq > alignments/{SRR}.sam"
+    )
+    os.system(f"samtools view -bS alignments/{SRR}.sam | samtools sort -o alignments/{SRR}_sorted.bam")
+    os.system(f"rm -f alignments/{SRR}.sam")
+    os.system(f"samtools index alignments/{SRR}_sorted.bam")
+    # Extraction en BAM des reads non mappés (les deux mates non mappés)
+    os.system(f"samtools view -b -f 12 -F 256 alignments/{SRR}_sorted.bam > unmapped/{SRR}_unmapped.bam")
+    # Extraction en fastq directement avec samtools
+    os.system(f"samtools fastq -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -0 /dev/null -s /dev/null -n unmapped/{SRR}_unmapped.bam")
+    # Assemblage unmapped
+    outdir = f"assemblies_unmapped/{SRR}"
+    contigs = f"contigs_unmapped/{SRR}_unmapped_contigs.fasta"
+    k_values = choose_k_values(f"unmapped/{SRR}_unmapped_1.fastq")
+    os.system(
+        f"spades.py --careful -t 16 --cov-cutoff auto -k {k_values} -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -o {outdir}"
+    )
+    assembled = f"{outdir}/contigs.fasta"
+    if os.path.exists(assembled):
+        os.rename(assembled, contigs)
+    os.system(f"rm -f fastq/{SRR}*fastq")
+    os.system(f"rm -f fastq/cleaned/{SRR}*fastq")
 
     sorted_bam = f"alignments/{SRR}_sorted.bam"
     
@@ -303,9 +300,6 @@ for SRR in sra_list:
             nom = nom.rstrip(' ')
             nom = unicodedata.normalize('NFKD', nom).encode('ascii', 'ignore').decode('ascii')
             nom = nom.replace(' ', '_').replace('/', '-')
-            print(debut)
-            print(fin)
-            print(nom)
             assert debut < fin
             with open(f'data/RD/{nom}.fasta', 'w') as f:
                 f.write(f'>{nom}\n')
@@ -314,7 +308,9 @@ for SRR in sra_list:
         
 
     os.system(f"makeblastdb -in data/all_contigs.fasta -dbtype nucl -out mydb")
-    if stop:
+    done.append(SRR)
+    with open('done.pkl', 'wb') as f:
+        pickle.dump(done, f)
         exit()    
 
 # blastn -query data/sequences/TbD1.fasta -db mydb
