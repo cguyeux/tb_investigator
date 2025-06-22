@@ -48,7 +48,7 @@ def analyze_absent_regions(srr: str, bam: str, h37rv_fasta: str, rd_dir: str,
     rd_fasta = os.path.join(results_dir, "RD_all.fasta")
     blast_db = os.path.join(results_dir, "RD_db")
     blast_out = os.path.join(results_dir, f"{srr}_blast.txt")
-    csv_out = os.path.join(results_dir, f"{srr}_rd.csv")
+    csv_out = os.path.join(results_dir, f"{sra_list[srr].replace(' ', '')}_{srr}_rd.csv")
 
     # Coverage and regions absent from H37Rv
     subprocess.run(
@@ -132,6 +132,7 @@ sra_list = {
     "SRR13736067": "L4.9 H37Rv",
     "ERR552768": "Pinipedii",
     "ERR552037": "Microti",
+    "SRR7617526": "Bovis La1",
     "ERR2707158": "L10", 
     "ERR4815138": "L6.1",
     "ERR181315": "L9",
@@ -213,7 +214,6 @@ sra_list = {
     "SRR16058599": "Orygis La3",
     "ERR2517593": "Orygis La3",
     "SRR10251199": "Orygis La3",
-    "SRR7617526": "Bovis La1",
     "ERR6337391": "Bovis La1",
     "SRR1791869": "Bovis La1",
     "SRR14782713": "Bovis La1.2 BCG",
