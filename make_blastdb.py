@@ -462,6 +462,7 @@ for SRR in [u for u in sra_list if u not in done]:
             concat(f"data/RD/{nom}.fasta")
         
 
+    os.system(f"makeblastdb -in data/all_contigs.fasta -dbtype nucl -out mydb")
     done.append(SRR)
     with open('done.pkl', 'wb') as f:
         pickle.dump(done, f)
