@@ -274,6 +274,7 @@ os.system("mkdir -p data/RD")
 os.system("mkdir -p mapped")
 os.system("mkdir -p assemblies_mapped")
 os.system("mkdir -p contigs_mapped")
+os.system("mkdir -p bdd")
 
 def concat(fasta_file, motif_source='', motif_cible=''):
     with open(fasta_file, 'r') as f:
@@ -283,6 +284,49 @@ def concat(fasta_file, motif_source='', motif_cible=''):
     with open('data/all_contigs.fasta', 'a') as f:
         f.write('\n')
         f.write(fasta)
+
+def append_to_fasta(fasta_file: str, dest: str, motif_source: str = "", motif_cible: str = "") -> None:
+    """Append ``fasta_file`` content to ``dest`` applying header replacement."""
+    if not os.path.exists(fasta_file):
+        return
+    with open(fasta_file, "r") as fh:
+        content = fh.read()
+    if motif_source:
+        content = content.replace(motif_source, motif_cible)
+    with open(dest, "a") as out:
+        out.write("\n")
+        out.write(content)
+
+def update_lineage_db(srr: str, lineage: str, mapped: str, unmapped: str) -> None:
+    """Create or update the BLAST DB for ``lineage`` with ``srr`` contigs."""
+
+    clean = lineage.replace(" ", "")
+    fasta_path = os.path.join("bdd", f"{clean}.fasta")
+
+    existing = ""
+    if os.path.exists(fasta_path):
+        with open(fasta_path) as fh:
+            existing = fh.read()
+
+    if f">{srr}_" not in existing:
+        append_to_fasta(
+            unmapped,
+            fasta_path,
+            motif_source=">NODE_",
+            motif_cible=f">{srr}_{lineage}_unmapped_NODE_",
+        )
+        append_to_fasta(
+            mapped,
+            fasta_path,
+            motif_source=">NODE_",
+            motif_cible=f">{srr}_{lineage}_mapped_NODE_",
+        )
+
+    subprocess.run(
+        f"makeblastdb -in {fasta_path} -dbtype nucl -out bdd/{clean}",
+        shell=True,
+        check=True,
+    )
 
 with open('done.pkl', 'rb') as f:
      done = pickle.load(f)
@@ -367,6 +411,12 @@ for SRR in [u for u in sra_list if u not in done]:
         if os.path.exists(assembled_m):
             os.rename(assembled_m, contigs_m)
 
+    update_lineage_db(
+        srr=SRR,
+        lineage=sra_list[SRR],
+        mapped=contigs_m,
+        unmapped=contigs,
+    )
 
     os.system('rm -f data/all_contigs.fasta')
 
@@ -412,7 +462,6 @@ for SRR in [u for u in sra_list if u not in done]:
             concat(f"data/RD/{nom}.fasta")
         
 
-    os.system(f"makeblastdb -in data/all_contigs.fasta -dbtype nucl -out mydb")
     done.append(SRR)
     with open('done.pkl', 'wb') as f:
         pickle.dump(done, f)
