@@ -35,3 +35,8 @@ celles strictement inférieures à la longueur des lectures.
 Par exemple, pour des lectures de 150 nt, tous les k-mers précédents sont
 utilisés, alors que pour des lectures de 100 nt seuls `21,33,55,77,99` seront
 passés à SPAdes.
+
+Lors de la construction des bases de données de régions de délétions (RD),
+les en-têtes FASTA sont nettoyés pour supprimer les caractères spéciaux.
+Ceci évite les erreurs `makeblastdb` quand des symboles non ASCII comme `Δ`
+apparaissent dans les noms de séquences.
