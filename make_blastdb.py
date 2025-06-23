@@ -24,17 +24,34 @@ def choose_k_values(fastq_file: str) -> str:
     return ",".join(str(k) for k in selected)
 
 
+def sanitize_header(header: str) -> str:
+    """Return an ASCII-only header safe for makeblastdb."""
+    header = unicodedata.normalize("NFKD", header)
+    header = header.encode("ascii", "ignore").decode("ascii")
+    header = header.replace(" ", "_").replace("/", "_")
+    return header
+
+
 def build_rd_fasta(rd_dir: str, rd_fasta: str) -> None:
-    """Concatenate all RD FASTA files found in ``rd_dir``."""
+    """Concatenate all RD FASTA files found in ``rd_dir``.
+    Headers are sanitized to avoid non-ASCII characters."""
+
     with open(rd_fasta, "w") as out:
         for fname in sorted(os.listdir(rd_dir)):
             if not fname.endswith(".fasta"):
                 continue
-            with open(os.path.join(rd_dir, fname)) as fh:
-                content = fh.read()
-                out.write(content)
-                if not content.endswith("\n"):
-                    out.write("\n")
+            path = os.path.join(rd_dir, fname)
+            last = None
+            with open(path) as fh:
+                for line in fh:
+                    last = line
+                    if line.startswith(">"):
+                        clean = sanitize_header(line[1:].strip())
+                        out.write(f">{clean}\n")
+                    else:
+                        out.write(line)
+            if last is not None and not last.endswith("\n"):
+                out.write("\n")
 
 
 def analyze_absent_regions(srr: str, bam: str, h37rv_fasta: str, rd_dir: str,
