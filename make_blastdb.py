@@ -254,6 +254,7 @@ sra_list = {
     "ERR017801": "L5",
     "ERR5336143": "L5",
     "ERR1082132": "L5",
+    "ERR12345": "L5",
     "SRR1239339": "Pinipedii",
     "SRR7693090": "Pinipedii",
     "ERR4627394": "Microti",
