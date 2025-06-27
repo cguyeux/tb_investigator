@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-"""Analyse sequences and check their origin.
-
-The script computes the GC content of an input FASTA file and can optionally
-test whether the contigs match known plasmid, phage or transposon sequences.
-Detection relies on external tools and databases such as BLAST, PLSDB,
-PHASTER, ISEScan and TransposonPSI.
-"""
 import argparse
 import os
 import subprocess
 from typing import List
 
-
 def compute_gc(fasta: str) -> float:
-    """Return the overall GC percentage of all sequences in *fasta*."""
+    """Calcule le % GC d'un fichier fasta."""
     total_len = 0
     gc_count = 0
     seq = []
@@ -35,29 +27,20 @@ def compute_gc(fasta: str) -> float:
         return 0.0
     return gc_count / total_len * 100
 
-
 def blast_hits(fasta: str, db: str, evalue: float = 1e-5) -> List[str]:
-    """Return query identifiers with hits against *db* using BLAST."""
+    """Retourne les ID des queries avec hit contre *db* via BLASTn."""
     cmd = [
         "blastn",
-        "-query",
-        fasta,
-        "-db",
-        db,
-        "-max_target_seqs",
-        "1",
-        "-evalue",
-        str(evalue),
-        "-outfmt",
-        "6 qseqid sseqid pident length bitscore evalue",
+        "-query", fasta,
+        "-db", db,
+        "-max_target_seqs", "1",
+        "-evalue", str(evalue),
+        "-outfmt", "6 qseqid sseqid pident length bitscore evalue",
     ]
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     except FileNotFoundError as exc:
         raise RuntimeError("blastn not found. Install BLAST+ to use this option.") from exc
-
     hits = []
     for line in result.stdout.strip().splitlines():
         parts = line.split("\t")
@@ -65,77 +48,81 @@ def blast_hits(fasta: str, db: str, evalue: float = 1e-5) -> List[str]:
             hits.append(parts[0])
     return hits
 
-
 def run_isescan(fasta: str, isescan: str, outdir: str) -> bool:
-    """Run ISEScan on *fasta*. Return True if predictions were produced."""
+    """Lance ISEScan sur *fasta*. Retourne True si IS trouvés."""
     os.makedirs(outdir, exist_ok=True)
     try:
         result = subprocess.run(
-            [
-                isescan,
-                "--seqfile",
-                fasta,
-                "--output",
-                outdir,
-            ],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
+            [isescan, "--seqfile", fasta, "--output", outdir],
+            check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
     except FileNotFoundError as exc:
         raise RuntimeError(f"{isescan} not found. Install ISEScan to use this option.") from exc
-
     if result.returncode != 0:
         raise RuntimeError(f"ISEScan failed with status {result.returncode}:\n{result.stdout}")
-
     gff = os.path.join(outdir, "prediction.gff3")
     return os.path.exists(gff)
 
-
-def run_transposonpsi(fasta: str, script: str, outdir: str) -> bool:
-    """Run TransposonPSI on *fasta*. Return True if prediction files were created."""
+def predict_orfs(fasta: str, outdir: str) -> str:
+    """Prédis les ORFs avec prodigal (mode metagenomic, robustes pour contigs)."""
     os.makedirs(outdir, exist_ok=True)
+    orfs_faa = os.path.join(outdir, "orfs.faa")
     try:
         subprocess.run([
-            script,
-            fasta,
-        ], cwd=outdir, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            "prodigal", "-i", fasta, "-a", orfs_faa, "-p", "meta", "-q"
+        ], check=True)
+    except Exception as e:
+        raise RuntimeError(f"Prodigal failed: {e}")
+    return orfs_faa
+
+def blastx_hits(faa: str, db: str, evalue: float = 1e-5, keyword="transposase") -> List[str]:
+    """BLASTx des protéines contre *db* et recherche du mot-clé (e.g. transposase)."""
+    cmd = [
+        "blastp",  # blastx si tu pars du nucl, blastp si orfs.faa
+        "-query", faa,
+        "-db", db,
+        "-evalue", str(evalue),
+        "-outfmt", "6 qseqid sseqid pident length bitscore evalue stitle",
+        "-max_target_seqs", "5"
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     except FileNotFoundError as exc:
-        raise RuntimeError(
-            f"{script} not found. Install TransposonPSI to use this option."
-        ) from exc
-    for fname in os.listdir(outdir):
-        if fname.endswith("_transposonPSI.gff3"):
-            return True
-    return False
+        raise RuntimeError("blastp not found. Install BLAST+ to use this option.") from exc
+    hits = []
+    for line in result.stdout.strip().splitlines():
+        if keyword.lower() in line.lower():
+            hits.append(line)
+    return hits
 
+def run_hmmer(faa: str, pfam_db: str, keyword="transposase") -> List[str]:
+    """Recherche de domaines HMM PFAM transposase dans les protéines."""
+    # pfam_db doit être une base hmmpressée
+    cmd = ["hmmscan", "--tblout", "hmmer.tbl", pfam_db, faa]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError("hmmscan not found. Install HMMER to use this option.") from exc
+    hits = []
+    for line in result.stdout.strip().splitlines():
+        if not line.startswith("#") and keyword.lower() in line.lower():
+            hits.append(line)
+    return hits
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(
-        description=(
-            "Compute GC content and optionally search for plasmid, phage or "
-            "transposon sequences"
-        )
+        description="Analyse GC et recherche d'origine (plasmide, phage, IS, transposon, orf transposase)"
     )
-    parser.add_argument("fasta", help="Input FASTA file")
-    parser.add_argument("--plasmid-db", help="BLAST database built from PLSDB")
-    parser.add_argument("--phage-db", help="BLAST database of phage sequences")
-    parser.add_argument("--isescan", help="Path to isescan.py executable")
-    parser.add_argument(
-        "--transposonpsi", help="Path to TransposonPSI.pl script"
-    )
-    parser.add_argument(
-        "--tmpdir",
-        default="tmp",
-        help="Directory for intermediate files from external tools",
-    )
-    parser.add_argument(
-        "--evalue",
-        type=float,
-        default=1e-5,
-        help="E-value threshold for BLAST searches",
-    )
+    parser.add_argument("fasta", help="Fichier FASTA à analyser")
+    parser.add_argument("--plasmid-db", help="Base BLAST de plasmides (PLSDB)")
+    parser.add_argument("--phage-db", help="Base BLAST de phages")
+    parser.add_argument("--isescan", help="Chemin vers isescan.py")
+    parser.add_argument("--tmpdir", default="tmp", help="Répertoire pour les fichiers temporaires")
+    parser.add_argument("--evalue", type=float, default=1e-5)
+    parser.add_argument("--orf-search", action="store_true", help="Prédire les ORFs et faire une recherche de transposase")
+    parser.add_argument("--orf-db", help="Base BLAST protéines (e.g. NR ou ISFinder_proteins)")
+    parser.add_argument("--hmmer", action="store_true", help="Faire aussi une recherche HMMER/PFAM")
+    parser.add_argument("--pfam-db", help="Base HMM PFAM (hmmscan)")
     args = parser.parse_args()
 
     gc = compute_gc(args.fasta)
@@ -171,20 +158,38 @@ def main() -> None:
         except RuntimeError as err:
             print(err)
 
-    if args.transposonpsi:
-        try:
-            found = run_transposonpsi(
-                args.fasta,
-                args.transposonpsi,
-                os.path.join(args.tmpdir, "transposonpsi"),
-            )
-            msg = (
-                "TransposonPSI detected transposons." if found else "TransposonPSI found no transposons."
-            )
-            print(msg)
-        except RuntimeError as err:
-            print(err)
+    # Désactivation par défaut de TransposonPSI car obsolète/incompatible
+    # if args.transposonpsi:
+    #     print("ATTENTION : TransposonPSI nécessite BLAST legacy et est souvent incompatible BLAST+.")
+    #     # Ajoute ici si besoin la gestion si BLAST legacy disponible
 
+    # Ajout de la recherche ORF et transposase
+    if args.orf_search:
+        print("\nRecherche de transposases ou intégrases par annotation ORF/blastx :")
+        faa = predict_orfs(args.fasta, os.path.join(args.tmpdir, "orfs"))
+        if args.orf_db:
+            try:
+                hits = blastx_hits(faa, args.orf_db, args.evalue)
+                if hits:
+                    print("Hits transposase/integrase trouvés (blastp) :")
+                    for h in hits:
+                        print(h)
+                else:
+                    print("Aucun hit transposase/integrase (blastp).")
+            except RuntimeError as err:
+                print(err)
+        if args.hmmer and args.pfam_db:
+            try:
+                hits = run_hmmer(faa, args.pfam_db)
+                if hits:
+                    print("Domaines transposase trouvés (HMMER) :")
+                    for h in hits:
+                        print(h)
+                else:
+                    print("Aucun domaine transposase (HMMER/PFAM).")
+            except RuntimeError as err:
+                print(err)
 
 if __name__ == '__main__':
     main()
+
