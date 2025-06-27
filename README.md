@@ -53,6 +53,17 @@ Le script `analyse_seq.py` calcule le pourcentage global de GC d'un fichier FAST
 
 Le pourcentage de GC est affiché sur la sortie standard avec deux décimales.
 
+### Affichage de l'arbre des sous-lignées
+
+Si vous disposez de bases BLAST par sous-lignée (dans un répertoire `bdd/` par
+exemple), le script peut afficher un arbre phylogénétique ASCII indiquant pour
+chaque feuille le pourcentage de la séquence retrouvée dans la base
+correspondante :
+
+```bash
+./analyse_seq.py sequences.fasta --lineage-db-dir bdd
+```
+
 ## Vérification de l'origine des contigs
 
 Le même script peut rechercher si des contigs correspondent à des plasmides,
