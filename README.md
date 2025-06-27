@@ -94,14 +94,14 @@ des phages ou des éléments transposables.
 
 ## Lister les CDS prédits par Prodigal
 
-Le script `list_cds.py` exécute Prodigal sur un fichier FASTA et affiche un
-résumé du nombre de CDS détectés ainsi que leur répartition par brin. Il écrit
-également les annotations au format GFF et les protéines traduites.
+`analyse_seq.py` peut également lancer Prodigal pour prédire les CDS et en
+afficher un résumé. Les annotations GFF et les protéines traduites sont écrites
+à l'emplacement spécifié par `--prodigal-prefix` (dans `--tmpdir` par défaut).
 
 ### Usage
 
 ```bash
-./list_cds.py genome.fasta -o resultat/prodigal
+./analyse_seq.py genome.fasta --list-cds --prodigal-prefix resultat/prodigal
 ```
 
 Les fichiers `resultat/prodigal.gff` et `resultat/prodigal.faa` contiendront
