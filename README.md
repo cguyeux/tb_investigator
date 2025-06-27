@@ -91,3 +91,18 @@ des phages ou des éléments transposables.
 ./analyse_seq.py contigs.fasta --plasmid-db plsdb_db --phage-db phages_db \
     --isescan /path/to/isescan.py --transposonpsi /path/to/TransposonPSI.pl
 ```
+
+## Lister les CDS prédits par Prodigal
+
+Le script `list_cds.py` exécute Prodigal sur un fichier FASTA et affiche un
+résumé du nombre de CDS détectés ainsi que leur répartition par brin. Il écrit
+également les annotations au format GFF et les protéines traduites.
+
+### Usage
+
+```bash
+./list_cds.py genome.fasta -o resultat/prodigal
+```
+
+Les fichiers `resultat/prodigal.gff` et `resultat/prodigal.faa` contiendront
+respectivement les coordonnées des CDS et leurs séquences protéiques.
