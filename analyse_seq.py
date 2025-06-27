@@ -230,7 +230,7 @@ def main():
     args = parser.parse_args()
 
     if args.lineage_db_dir:
-        newick = "(Canetii, (L8, ((L1, (L7, (L4, (L3, L2)))), (L5, (((Pinipedii, Microti), (Orygis, (Bovis, (Caprae, La4)))), ((L10, (L6, L9)), (Chimpanzee, (Mungi, (Dassie, Suricattae)))))))));"
+        newick = "(Canettii, (L8, ((L1, (L7, ((L4.1, (L4.2, (((L4.4, L4.13), (L4.17, (L4.3, L4.18))), (L4.14, (L4.5, ((L4.6.1, L4.6.2), (L4.11, (L4.12, (L4.16, (L4.15, (L4.7, ((L4.9, L4.9H37Rv), L4.8)))))))))))), (L3, (L2.1proto, L2.2))))), (L5, (((Pinipedii, Microti), (OrygisLa3, (BovisLa1, (CapraeLa2, La4)))), ((L10, ((L6.1, (L6.2, L6.3)), L9)), (Dassie, Suricattae)))))));"
         tree = Tree(newick)
         coverages: Dict[str, float] = {}
         for leaf in tree.iter_leaves():
