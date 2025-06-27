@@ -70,13 +70,25 @@ def run_isescan(fasta: str, isescan: str, outdir: str) -> bool:
     """Run ISEScan on *fasta*. Return True if predictions were produced."""
     os.makedirs(outdir, exist_ok=True)
     try:
-        subprocess.run([
-            isescan,
-            fasta,
-            outdir,
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        result = subprocess.run(
+            [
+                isescan,
+                "--seqfile",
+                fasta,
+                "--output",
+                outdir,
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
     except FileNotFoundError as exc:
         raise RuntimeError(f"{isescan} not found. Install ISEScan to use this option.") from exc
+
+    if result.returncode != 0:
+        raise RuntimeError(f"ISEScan failed with status {result.returncode}:\n{result.stdout}")
+
     gff = os.path.join(outdir, "prediction.gff3")
     return os.path.exists(gff)
 
