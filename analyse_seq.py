@@ -216,9 +216,14 @@ def predict_orfs(fasta: str, outdir: str) -> str:
 
 
 def blastx_hits(
-    faa: str, db: str, evalue: float = 1e-5, keyword="transposase"
+    faa: str, db: str, evalue: float = 1e-5, keyword: str | None = "transposase"
 ) -> List[str]:
-    """BLASTx des protéines contre *db* et recherche du mot-clé (e.g. transposase)."""
+    """BLASTp des protéines contre *db*.
+
+    Si ``keyword`` est fourni, seuls les hits contenant ce mot-clé sont
+    retournés. Avec ``keyword`` à ``None`` ou ``"none"`` tous les résultats sont
+    conservés.
+    """
     cmd = [
         "blastp",  # blastx si tu pars du nucl, blastp si orfs.faa
         "-query",
@@ -240,13 +245,22 @@ def blastx_hits(
         ) from exc
     hits = []
     for line in result.stdout.strip().splitlines():
-        if keyword.lower() in line.lower():
+        if keyword is None or keyword == "" or keyword.lower() == "none":
+            hits.append(line)
+        elif keyword.lower() in line.lower():
             hits.append(line)
     return hits
 
 
-def run_hmmer(faa: str, pfam_db: str, keyword="transposase") -> List[str]:
-    """Recherche de domaines HMM PFAM transposase dans les protéines."""
+def run_hmmer(
+    faa: str, pfam_db: str, keyword: str | None = "transposase"
+) -> List[str]:
+    """Recherche de domaines HMM PFAM dans les protéines.
+
+    Si ``keyword`` est fourni, seuls les domaines contenant ce mot-clé sont
+    rapportés. Avec ``keyword`` à ``None`` ou ``"none"`` tous les résultats sont
+    retournés.
+    """
     # pfam_db doit être une base hmmpressée
     cmd = ["hmmscan", "--tblout", "hmmer.tbl", pfam_db, faa]
     try:
@@ -257,14 +271,18 @@ def run_hmmer(faa: str, pfam_db: str, keyword="transposase") -> List[str]:
         ) from exc
     hits = []
     for line in result.stdout.strip().splitlines():
-        if not line.startswith("#") and keyword.lower() in line.lower():
+        if line.startswith("#"):
+            continue
+        if keyword is None or keyword == "" or keyword.lower() == "none":
+            hits.append(line)
+        elif keyword.lower() in line.lower():
             hits.append(line)
     return hits
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyse GC et recherche d'origine (plasmide, phage, IS, transposon, orf transposase)"
+        description="Analyse GC et recherche d'origine (plasmide, phage, IS, transposon, annotation d'ORFs)"
     )
     parser.add_argument("fasta", help="Fichier FASTA à analyser")
     parser.add_argument("--plasmid-db", help="Base BLAST de plasmides (PLSDB)")
@@ -307,6 +325,14 @@ def main():
         "--hmmer", action="store_true", help="Faire aussi une recherche HMMER/PFAM"
     )
     parser.add_argument("--pfam-db", help="Base HMM PFAM (hmmscan)")
+    parser.add_argument(
+        "--orf-keyword",
+        default="transposase",
+        help=(
+            "Mot-clé pour filtrer les hits BLAST/HMMER sur les ORFs. "
+            'Utiliser "none" pour désactiver le filtrage.'
+        ),
+    )
     parser.add_argument(
         "--lineage-db-dir",
         help="Répertoire des bases BLAST par sous-lignée pour afficher l'arbre",
@@ -386,32 +412,38 @@ def main():
     #     print("ATTENTION : TransposonPSI nécessite BLAST legacy et est souvent incompatible BLAST+.")
     #     # Ajoute ici si besoin la gestion si BLAST legacy disponible
 
-    # Ajout de la recherche ORF et transposase
+    # Recherche optionnelle d'ORFs et annotation par BLAST
     if args.orf_search:
-        print("\nRecherche de transposases ou intégrases par annotation ORF/blastx :")
+        print("\nRecherche de protéines par annotation ORF/BLASTp :")
         faa = predict_orfs(args.fasta, os.path.join(args.tmpdir, "orfs"))
         if args.orf_db:
             for db in args.orf_db:
                 print(f"\nRecherche dans la base {db} :")
                 try:
-                    hits = blastx_hits(faa, db, args.evalue)
+                    hits = blastx_hits(faa, db, args.evalue, args.orf_keyword)
                     if hits:
-                        print("Hits transposase/integrase trouvés (blastp) :")
+                        if args.orf_keyword and args.orf_keyword.lower() not in ("", "none"):
+                            print(f"Hits contenant '{args.orf_keyword}' trouvés (blastp) :")
+                        else:
+                            print("Hits BLASTp trouvés :")
                         for h in hits:
                             print(h)
                     else:
-                        print("Aucun hit transposase/integrase (blastp).")
+                        print("Aucun hit BLASTp trouvé.")
                 except RuntimeError as err:
                     print(err)
         if args.hmmer and args.pfam_db:
             try:
-                hits = run_hmmer(faa, args.pfam_db)
+                hits = run_hmmer(faa, args.pfam_db, args.orf_keyword)
                 if hits:
-                    print("Domaines transposase trouvés (HMMER) :")
+                    if args.orf_keyword and args.orf_keyword.lower() not in ("", "none"):
+                        print(f"Domaines contenant '{args.orf_keyword}' trouvés (HMMER) :")
+                    else:
+                        print("Domaines HMMER trouvés :")
                     for h in hits:
                         print(h)
                 else:
-                    print("Aucun domaine transposase (HMMER/PFAM).")
+                    print("Aucun domaine trouvé (HMMER/PFAM).")
             except RuntimeError as err:
                 print(err)
 
