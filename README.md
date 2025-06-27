@@ -40,3 +40,15 @@ Lors de la construction des bases de données de régions de délétions (RD),
 les en-têtes FASTA sont nettoyés pour supprimer les caractères spéciaux.
 Ceci évite les erreurs `makeblastdb` quand des symboles non ASCII comme `Δ`
 apparaissent dans les noms de séquences.
+
+## Calcul du taux de GC
+
+Le script `analyse_seq.py` calcule le pourcentage global de GC d'un fichier FASTA.
+
+### Usage
+
+```bash
+./analyse_seq.py sequences.fasta
+```
+
+Le pourcentage de GC est affiché sur la sortie standard avec deux décimales.
