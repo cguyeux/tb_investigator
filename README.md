@@ -106,3 +106,16 @@ afficher un résumé. Les annotations GFF et les protéines traduites sont écri
 
 Les fichiers `resultat/prodigal.gff` et `resultat/prodigal.faa` contiendront
 respectivement les coordonnées des CDS et leurs séquences protéiques.
+
+## Recherche de transposases par BLASTX
+
+L'option `--orf-search` prédit les ORF avec Prodigal puis interroge une ou
+plusieurs bases BLAST protéiques. Utilisez `--orf-db` plusieurs fois pour
+indiquer les bases à interroger.
+
+### Exemple
+
+```bash
+./analyse_seq.py genome.fasta --orf-search \
+    --orf-db myco_proteins --orf-db isfinder_prot
+```

@@ -296,7 +296,12 @@ def main():
         help="Prédire les ORFs et faire une recherche de transposase",
     )
     parser.add_argument(
-        "--orf-db", help="Base BLAST protéines (e.g. NR ou ISFinder_proteins)"
+        "--orf-db",
+        action="append",
+        help=(
+            "Base BLAST protéines (e.g. NR ou ISFinder_proteins). "
+            "Peut être spécifiée plusieurs fois."
+        ),
     )
     parser.add_argument(
         "--hmmer", action="store_true", help="Faire aussi une recherche HMMER/PFAM"
@@ -386,16 +391,18 @@ def main():
         print("\nRecherche de transposases ou intégrases par annotation ORF/blastx :")
         faa = predict_orfs(args.fasta, os.path.join(args.tmpdir, "orfs"))
         if args.orf_db:
-            try:
-                hits = blastx_hits(faa, args.orf_db, args.evalue)
-                if hits:
-                    print("Hits transposase/integrase trouvés (blastp) :")
-                    for h in hits:
-                        print(h)
-                else:
-                    print("Aucun hit transposase/integrase (blastp).")
-            except RuntimeError as err:
-                print(err)
+            for db in args.orf_db:
+                print(f"\nRecherche dans la base {db} :")
+                try:
+                    hits = blastx_hits(faa, db, args.evalue)
+                    if hits:
+                        print("Hits transposase/integrase trouvés (blastp) :")
+                        for h in hits:
+                            print(h)
+                    else:
+                        print("Aucun hit transposase/integrase (blastp).")
+                except RuntimeError as err:
+                    print(err)
         if args.hmmer and args.pfam_db:
             try:
                 hits = run_hmmer(faa, args.pfam_db)
