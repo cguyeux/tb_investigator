@@ -52,3 +52,31 @@ Le script `analyse_seq.py` calcule le pourcentage global de GC d'un fichier FAST
 ```
 
 Le pourcentage de GC est affiché sur la sortie standard avec deux décimales.
+
+## Vérification de l'origine des contigs
+
+Le même script peut rechercher si des contigs correspondent à des plasmides,
+des phages ou des éléments transposables.
+
+### Bases de données et outils requis
+
+- **PLSDB** pour les plasmides. Téléchargez les séquences puis créez une base
+  BLAST :
+
+  ```bash
+  makeblastdb -in plsdb.fasta -dbtype nucl -out plsdb_db
+  ```
+
+- **PHASTER** permet l'analyse de séquences phagiques en ligne sur
+  <https://phaster.ca/>. Si vous disposez d'une base locale de phages,
+  indiquez-la avec `--phage-db`.
+
+- **ISEScan** et **TransposonPSI** sont utilisés pour détecter les éléments
+  d'insertion. Installez-les séparément puis fournissez leur chemin au script.
+
+### Exemple d'utilisation
+
+```bash
+./analyse_seq.py contigs.fasta --plasmid-db plsdb_db --phage-db phages_db \
+    --isescan /path/to/isescan.py --transposonpsi /path/to/TransposonPSI.pl
+```
