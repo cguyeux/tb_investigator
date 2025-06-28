@@ -112,8 +112,10 @@ respectivement les coordonnées des CDS et leurs séquences protéiques.
 L'option `--orf-search` prédit les ORF avec Prodigal puis interroge une ou
 plusieurs bases BLAST protéiques. Utilisez `--orf-db` plusieurs fois pour
 indiquer les bases à interroger. Par défaut, seuls les hits contenant le mot
-clé "transposase" sont affichés. Vous pouvez spécifier un autre mot-clé avec
-`--orf-keyword` ou désactiver le filtrage en passant `--orf-keyword none`.
+clé "transposase" sont résumés. Le script indique pour chaque ORF le meilleur
+hit trouvé. Utilisez l'option `--orf-detailed` pour obtenir la sortie BLAST
+complète. Vous pouvez spécifier un autre mot-clé avec `--orf-keyword` ou
+désactiver le filtrage en passant `--orf-keyword none`.
 
 ### Exemple
 
