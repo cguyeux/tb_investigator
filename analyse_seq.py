@@ -111,6 +111,16 @@ def compute_total_length(fasta: str) -> int:
     return total
 
 
+def count_fasta_seqs(fasta: str) -> int:
+    """Retourne le nombre d'entrées dans un fichier FASTA."""
+    count = 0
+    with open(fasta) as fh:
+        for line in fh:
+            if line.startswith(">"):
+                count += 1
+    return count
+
+
 def blast_coverage(fasta: str, db: str, evalue: float = 1e-5) -> float:
     """Pourcentage de la séquence avec un hit BLAST dans ``db``."""
     total_len = compute_total_length(fasta)
@@ -217,12 +227,14 @@ def predict_orfs(fasta: str, outdir: str) -> str:
 
 def blastx_hits(
     faa: str, db: str, evalue: float = 1e-5, keyword: str | None = "transposase"
-) -> List[str]:
-    """BLASTp des protéines contre *db*.
+) -> List[Dict[str, str]]:
+    """BLASTp des protéines contre *db* et retourne les champs parsés.
 
     Si ``keyword`` est fourni, seuls les hits contenant ce mot-clé sont
     retournés. Avec ``keyword`` à ``None`` ou ``"none"`` tous les résultats sont
-    conservés.
+    conservés. Chaque élément retourné est un dictionnaire contenant les clés
+    ``qseqid``, ``sseqid``, ``pident``, ``length``, ``bitscore``, ``evalue`` et
+    ``stitle``.
     """
     cmd = [
         "blastp",  # blastx si tu pars du nucl, blastp si orfs.faa
@@ -243,13 +255,39 @@ def blastx_hits(
         raise RuntimeError(
             "blastp not found. Install BLAST+ to use this option."
         ) from exc
-    hits = []
+    hits: List[Dict[str, str]] = []
     for line in result.stdout.strip().splitlines():
-        if keyword is None or keyword == "" or keyword.lower() == "none":
-            hits.append(line)
-        elif keyword.lower() in line.lower():
-            hits.append(line)
+        if not line:
+            continue
+        if keyword is None or keyword == "" or keyword.lower() == "none" or keyword.lower() in line.lower():
+            parts = line.split("\t")
+            if len(parts) >= 7:
+                hit = {
+                    "qseqid": parts[0],
+                    "sseqid": parts[1],
+                    "pident": parts[2],
+                    "length": parts[3],
+                    "bitscore": parts[4],
+                    "evalue": parts[5],
+                    "stitle": parts[6],
+                }
+                hits.append(hit)
     return hits
+
+
+def summarize_orf_hits(hits: List[Dict[str, str]]) -> List[str]:
+    """Résumé simple des hits BLASTp par ORF."""
+    best: Dict[str, Dict[str, str]] = {}
+    for h in hits:
+        if h["qseqid"] not in best:
+            best[h["qseqid"]] = h
+    summary = []
+    for qseqid, info in best.items():
+        desc = info.get("stitle", "")
+        summary.append(
+            f"{qseqid}: {desc} (identité {info['pident']}%, longueur {info['length']})"
+        )
+    return summary
 
 
 def run_hmmer(
@@ -320,6 +358,11 @@ def main():
             "Base BLAST protéines (e.g. NR ou ISFinder_proteins). "
             "Peut être spécifiée plusieurs fois."
         ),
+    )
+    parser.add_argument(
+        "--orf-detailed",
+        action="store_true",
+        help="Afficher les lignes BLAST/HMMER complètes pour chaque ORF",
     )
     parser.add_argument(
         "--hmmer", action="store_true", help="Faire aussi une recherche HMMER/PFAM"
@@ -416,18 +459,33 @@ def main():
     if args.orf_search:
         print("\nRecherche de protéines par annotation ORF/BLASTp :")
         faa = predict_orfs(args.fasta, os.path.join(args.tmpdir, "orfs"))
+        orf_total = count_fasta_seqs(faa)
+        print(f"{orf_total} ORFs prédits")
         if args.orf_db:
             for db in args.orf_db:
                 print(f"\nRecherche dans la base {db} :")
                 try:
                     hits = blastx_hits(faa, db, args.evalue, args.orf_keyword)
                     if hits:
-                        if args.orf_keyword and args.orf_keyword.lower() not in ("", "none"):
-                            print(f"Hits contenant '{args.orf_keyword}' trouvés (blastp) :")
-                        else:
-                            print("Hits BLASTp trouvés :")
-                        for h in hits:
-                            print(h)
+                        summaries = summarize_orf_hits(hits)
+                        print(f"{len(summaries)} ORFs avec hits :")
+                        for s in summaries:
+                            print(s)
+                        if args.orf_detailed:
+                            for h in hits:
+                                print(
+                                    "\t".join(
+                                        [
+                                            h["qseqid"],
+                                            h["sseqid"],
+                                            h["pident"],
+                                            h["length"],
+                                            h["bitscore"],
+                                            h["evalue"],
+                                            h["stitle"],
+                                        ]
+                                    )
+                                )
                     else:
                         print("Aucun hit BLASTp trouvé.")
                 except RuntimeError as err:
@@ -436,12 +494,10 @@ def main():
             try:
                 hits = run_hmmer(faa, args.pfam_db, args.orf_keyword)
                 if hits:
-                    if args.orf_keyword and args.orf_keyword.lower() not in ("", "none"):
-                        print(f"Domaines contenant '{args.orf_keyword}' trouvés (HMMER) :")
-                    else:
-                        print("Domaines HMMER trouvés :")
-                    for h in hits:
-                        print(h)
+                    print(f"{len(hits)} domaines HMMER trouvés")
+                    if args.orf_detailed:
+                        for h in hits:
+                            print(h)
                 else:
                     print("Aucun domaine trouvé (HMMER/PFAM).")
             except RuntimeError as err:
