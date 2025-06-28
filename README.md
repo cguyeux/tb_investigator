@@ -123,3 +123,8 @@ désactiver le filtrage en passant `--orf-keyword none`.
 ./analyse_seq.py genome.fasta --orf-search \
     --orf-db myco_proteins --orf-db isfinder_prot
 ```
+
+Une recherche de domaines PFAM peut être ajoutée en indiquant `--hmmer` et la
+base `--pfam-db`. Le seuil de recherche est contrôlé par `--evalue`, utilisé
+aussi bien pour BLAST que pour HMMER. L'option `--orf-detailed` affiche alors
+les lignes complètes des résultats.

@@ -291,30 +291,40 @@ def summarize_orf_hits(hits: List[Dict[str, str]]) -> List[str]:
 
 
 def run_hmmer(
-    faa: str, pfam_db: str, keyword: str | None = "transposase"
+    faa: str, pfam_db: str, keyword: str | None = "transposase", evalue: float = 1e-5
 ) -> List[str]:
     """Recherche de domaines HMM PFAM dans les protéines.
 
     Si ``keyword`` est fourni, seuls les domaines contenant ce mot-clé sont
     rapportés. Avec ``keyword`` à ``None`` ou ``"none"`` tous les résultats sont
-    retournés.
+    retournés. Le paramètre ``evalue`` définit le seuil ``--domE`` passé à
+    ``hmmscan``.
     """
     # pfam_db doit être une base hmmpressée
-    cmd = ["hmmscan", "--tblout", "hmmer.tbl", pfam_db, faa]
+    cmd = [
+        "hmmscan",
+        "--domtblout",
+        "hmmer.tbl",
+        "--domE",
+        str(evalue),
+        pfam_db,
+        faa,
+    ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
     except FileNotFoundError as exc:
         raise RuntimeError(
             "hmmscan not found. Install HMMER to use this option."
         ) from exc
     hits = []
-    for line in result.stdout.strip().splitlines():
-        if line.startswith("#"):
-            continue
-        if keyword is None or keyword == "" or keyword.lower() == "none":
-            hits.append(line)
-        elif keyword.lower() in line.lower():
-            hits.append(line)
+    with open("hmmer.tbl") as tbl:
+        for line in tbl:
+            if line.startswith("#"):
+                continue
+            if keyword is None or keyword == "" or keyword.lower() == "none":
+                hits.append(line.strip())
+            elif keyword.lower() in line.lower():
+                hits.append(line.strip())
     return hits
 
 
@@ -345,7 +355,12 @@ def main():
         default="meta",
         help="Mode de Prodigal (meta ou single)",
     )
-    parser.add_argument("--evalue", type=float, default=1e-5)
+    parser.add_argument(
+        "--evalue",
+        type=float,
+        default=1e-5,
+        help="Seuil d'e-value pour BLAST et HMMER",
+    )
     parser.add_argument(
         "--orf-search",
         action="store_true",
@@ -492,7 +507,12 @@ def main():
                     print(err)
         if args.hmmer and args.pfam_db:
             try:
-                hits = run_hmmer(faa, args.pfam_db, args.orf_keyword)
+                hits = run_hmmer(
+                    faa,
+                    args.pfam_db,
+                    args.orf_keyword,
+                    args.evalue,
+                )
                 if hits:
                     print(f"{len(hits)} domaines HMMER trouvés")
                     if args.orf_detailed:
