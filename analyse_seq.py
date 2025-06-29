@@ -141,6 +141,61 @@ def parse_fasta_sequences(fasta: str) -> Dict[str, str]:
     return sequences
 
 
+def parse_prodigal_faa(faa: str) -> Dict[str, Dict[str, Any]]:
+    """Parse les sorties FASTA de Prodigal et retourne info par ORF."""
+    info: Dict[str, Dict[str, Any]] = {}
+    current_id: str | None = None
+    seq_lines: List[str] = []
+    with open(faa) as fh:
+        for line in fh:
+            if line.startswith(">"):
+                if current_id is not None:
+                    info.setdefault(current_id, {})["sequence"] = "".join(seq_lines)
+                header = line[1:].strip()
+                parts = header.split("#")
+                current_id = parts[0].strip().split()[0]
+                if len(parts) >= 4:
+                    try:
+                        start = int(parts[1].strip())
+                        end = int(parts[2].strip())
+                        strand_raw = parts[3].strip()
+                        strand = "-" if strand_raw.startswith("-") else "+"
+                        info[current_id] = {
+                            "start": start,
+                            "end": end,
+                            "strand": strand,
+                        }
+                    except ValueError:
+                        info[current_id] = {}
+                else:
+                    info[current_id] = {}
+                seq_lines = []
+            else:
+                seq_lines.append(line.strip())
+    if current_id is not None:
+        info.setdefault(current_id, {})["sequence"] = "".join(seq_lines)
+    return info
+
+
+def reverse_complement(seq: str) -> str:
+    """Retourne le complément inverse d'une séquence ADN."""
+    trans = str.maketrans("ACGTacgt", "TGCAtgca")
+    return seq.translate(trans)[::-1]
+
+
+def add_nuc_sequences(orf_info: Dict[str, Dict[str, Any]], dna_seq: str) -> None:
+    """Ajoute la séquence nucléotidique à chaque ORF."""
+    for info in orf_info.values():
+        start = info.get("start")
+        end = info.get("end")
+        if start is None or end is None:
+            continue
+        sub = dna_seq[start - 1 : end]
+        if info.get("strand") == "-":
+            sub = reverse_complement(sub)
+        info["nuc_sequence"] = sub
+
+
 def parse_gff_dict(gff: str) -> Dict[str, Dict[str, Any]]:
     """Parse un GFF Prodigal et retourne un dictionnaire par ID."""
     info: Dict[str, Dict[str, Any]] = {}
@@ -430,11 +485,17 @@ def print_orf_details(orf_info: Dict[str, Dict[str, Any]], seqname: str) -> None
         print("-" * 60)
         strand = info.get("strand", "+")
         orientation = "brin complément" if strand == "-" else "brin direct"
-        header = f"{seqname}_{oid}_{info.get('start','?')}-{info.get('end','?')}_{orientation}"
-        seq = info.get("sequence", "")
+        short_oid = oid
+        if oid.startswith(seqname + "_"):
+            short_oid = oid[len(seqname) + 1 :]
+        header = f"{seqname}_{short_oid}_{info.get('start','?')}-{info.get('end','?')}_{orientation}"
+        prot_seq = info.get("sequence", "")
+        nuc_seq = info.get("nuc_sequence", "")
         print(f">{header}")
-        if seq:
-            print(seq)
+        if prot_seq:
+            print(prot_seq)
+        if nuc_seq:
+            print(nuc_seq)
         details = []
         if "blast_hits" in info and info["blast_hits"]:
             details.append("BLASTp:")
@@ -646,10 +707,10 @@ def main():
                     summarize_cds(cds)
                 print(f"CDS annotations written to {gff}")
                 print(f"Protein translations written to {faa}")
-            orf_info = parse_gff_dict(gff)
-            sequences = parse_fasta_sequences(faa)
-            for oid, seq in sequences.items():
-                orf_info.setdefault(oid, {})["sequence"] = seq
+            orf_info = parse_prodigal_faa(faa)
+            dna_seq = parse_fasta_sequences(args.fasta).get(selected_seq_id, "")
+            if dna_seq:
+                add_nuc_sequences(orf_info, dna_seq)
         except Exception as err:
             print(f"Prodigal failed: {err}")
 
