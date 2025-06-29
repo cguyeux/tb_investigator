@@ -121,6 +121,39 @@ def count_fasta_seqs(fasta: str) -> int:
     return count
 
 
+def extract_sequence(filename: str, seqname: str | None, tmpdir: str) -> str:
+    """Extrait une séquence d'un multi-FASTA dans ``tmpdir`` et retourne son chemin."""
+    os.makedirs(tmpdir, exist_ok=True)
+    out_fasta = os.path.join(tmpdir, "selected.fasta")
+
+    current_id = None
+    wanted = seqname
+    seq_lines: list[str] = []
+    found = False
+    with open(filename) as fh:
+        for line in fh:
+            if line.startswith(">"):
+                header = line[1:].strip()
+                ident = header.split()[0]
+                if found:
+                    break
+                if wanted is None or ident == wanted:
+                    current_id = ident
+                    seq_lines = []
+                    found = True
+                continue
+            if found:
+                seq_lines.append(line.strip())
+
+    if not found:
+        raise ValueError(f"Sequence '{seqname}' not found in {filename}")
+
+    with open(out_fasta, "w") as out:
+        out.write(f">{current_id}\n")
+        out.write("\n".join(seq_lines) + "\n")
+    return out_fasta
+
+
 def blast_coverage(fasta: str, db: str, evalue: float = 1e-5) -> float:
     """Pourcentage de la séquence avec un hit BLAST dans ``db``."""
     total_len = compute_total_length(fasta)
@@ -332,7 +365,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="Analyse GC et recherche d'origine (plasmide, phage, IS, transposon, annotation d'ORFs)"
     )
-    parser.add_argument("fasta", help="Fichier FASTA à analyser")
+    parser.add_argument(
+        "filename",
+        help="Fichier multi-FASTA contenant la séquence à analyser",
+    )
+    parser.add_argument(
+        "seqname",
+        nargs="?",
+        help="Nom de la séquence à extraire (défaut: première)",
+    )
     parser.add_argument("--plasmid-db", help="Base BLAST de plasmides (PLSDB)")
     parser.add_argument("--phage-db", help="Base BLAST de phages")
     parser.add_argument("--isescan", help="Chemin vers isescan.py")
@@ -396,6 +437,11 @@ def main():
         help="Répertoire des bases BLAST par sous-lignée pour afficher l'arbre",
     )
     args = parser.parse_args()
+
+    try:
+        args.fasta = extract_sequence(args.filename, args.seqname, args.tmpdir)
+    except Exception as err:
+        parser.error(str(err))
 
     if args.lineage_db_dir:
         newick = "(M.riyadhense, (M.shinjukuense, (M.lacus, (M.decipiens,(Canettii, (L8, ((L1, (L7, ((L4.1, (L4.2, (((L4.4, L4.13), (L4.17, (L4.3, L4.18))), (L4.14, (L4.5, ((L4.6.1, L4.6.2), (L4.11, (L4.12, (L4.16, (L4.15, (L4.7, ((L4.9, L4.9H37Rv), L4.8)))))))))))), (L3, (L2.1proto, L2.2))))), (L5, (((Pinipedii, Microti), (OrygisLa3, (BovisLa1, (CapraeLa2, La4)))), ((L10, ((L6.1, (L6.2, L6.3)), L9)), (Chimpanze, (Mungi, (Dassie, Suricattae)))))))))))));"
