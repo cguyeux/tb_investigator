@@ -3,7 +3,7 @@ import argparse
 import os
 import shutil
 import subprocess
-from typing import Dict, List
+from typing import Dict, List, Any
 from ete3 import Tree
 
 
@@ -120,6 +120,62 @@ def count_fasta_seqs(fasta: str) -> int:
             if line.startswith(">"):
                 count += 1
     return count
+
+
+def parse_fasta_sequences(fasta: str) -> Dict[str, str]:
+    """Parse un fichier FASTA et retourne un dictionnaire id->sequence."""
+    sequences: Dict[str, str] = {}
+    current_id = None
+    seq_lines: List[str] = []
+    with open(fasta) as fh:
+        for line in fh:
+            if line.startswith(">"):
+                if current_id is not None:
+                    sequences[current_id] = "".join(seq_lines)
+                current_id = line[1:].strip().split()[0]
+                seq_lines = []
+            else:
+                seq_lines.append(line.strip())
+    if current_id is not None:
+        sequences[current_id] = "".join(seq_lines)
+    return sequences
+
+
+def parse_gff_dict(gff: str) -> Dict[str, Dict[str, Any]]:
+    """Parse un GFF Prodigal et retourne un dictionnaire par ID."""
+    info: Dict[str, Dict[str, Any]] = {}
+    with open(gff) as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            parts = line.strip().split("\t")
+            if len(parts) < 9:
+                continue
+            seqid, _source, type_, start, end, _score, strand, _phase, attrs = parts
+            if type_ != "CDS":
+                continue
+            attr_dict: Dict[str, str] = {}
+            for item in attrs.split(";"):
+                if "=" in item:
+                    key, value = item.split("=", 1)
+                    attr_dict[key] = value
+            orf_id = attr_dict.get("ID", "")
+            info[orf_id] = {
+                "seqid": seqid,
+                "start": int(start),
+                "end": int(end),
+                "strand": strand,
+            }
+    return info
+
+
+def first_fasta_header(fasta: str) -> str:
+    """Retourne le premier identifiant d'un fichier FASTA."""
+    with open(fasta) as fh:
+        for line in fh:
+            if line.startswith(">"):
+                return line[1:].strip().split()[0]
+    return ""
 
 
 def extract_sequence(filename: str, seqname: str | None, tmpdir: str) -> str:
@@ -368,6 +424,33 @@ def print_header(title: str) -> None:
     print(f"\n{bar}\n{title}\n{bar}")
 
 
+def print_orf_details(orf_info: Dict[str, Dict[str, Any]], seqname: str) -> None:
+    """Affiche les séquences ORF et leurs informations."""
+    for oid, info in sorted(orf_info.items(), key=lambda x: x[1].get("start", 0)):
+        print("-" * 60)
+        strand = info.get("strand", "+")
+        orientation = "brin complément" if strand == "-" else "brin direct"
+        header = f"{seqname}_{oid}_{info.get('start','?')}-{info.get('end','?')}_{orientation}"
+        seq = info.get("sequence", "")
+        print(f">{header}")
+        if seq:
+            print(seq)
+        details = []
+        if "blast_hits" in info and info["blast_hits"]:
+            details.append("BLASTp:")
+            for h in info["blast_hits"]:
+                desc = h.get("stitle", "")
+                details.append(
+                    f"  {h['sseqid']} identité {h['pident']}% longueur {h['length']} - {desc}"
+                )
+        if "hmmer_hits" in info and info["hmmer_hits"]:
+            details.append("HMMER:")
+            for line in info["hmmer_hits"]:
+                details.append(f"  {line}")
+        for d in details:
+            print(d)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyse GC et recherche d'origine (plasmide, phage, IS, transposon, annotation d'ORFs)"
@@ -454,6 +537,7 @@ def main():
     if args.seqname:
         print(f"Séquence extraite : {args.seqname}")
     print(f"Fichier temporaire : {args.fasta}")
+    selected_seq_id = first_fasta_header(args.fasta)
 
     if args.lineage_db_dir:
         print_header("Recherche de la sous-lignée (BLASTn)")
@@ -530,6 +614,8 @@ def main():
         args.hmmer and args.pfam_db
     )
 
+    orf_info: Dict[str, Dict[str, Any]] = {}
+
     if need_prodigal:
         prefix = os.path.join(args.tmpdir, args.prodigal_prefix)
         os.makedirs(os.path.dirname(prefix), exist_ok=True)
@@ -548,14 +634,22 @@ def main():
                 if args.list_cds == "full":
                     for c in cds:
                         print(
-                            "\t".join(
-                                [c["seqid"], c["start"], c["end"], c["strand"], c["id"]]
-                            )
+                            "\t".join([
+                                c["seqid"],
+                                c["start"],
+                                c["end"],
+                                c["strand"],
+                                c["id"],
+                            ])
                         )
                 else:
                     summarize_cds(cds)
                 print(f"CDS annotations written to {gff}")
                 print(f"Protein translations written to {faa}")
+            orf_info = parse_gff_dict(gff)
+            sequences = parse_fasta_sequences(faa)
+            for oid, seq in sequences.items():
+                orf_info.setdefault(oid, {})["sequence"] = seq
         except Exception as err:
             print(f"Prodigal failed: {err}")
 
@@ -572,6 +666,9 @@ def main():
                 try:
                     hits = blastx_hits(faa, db, args.evalue, args.orf_keyword)
                     if hits:
+                        for h in hits:
+                            oid = h["qseqid"]
+                            orf_info.setdefault(oid, {}).setdefault("blast_hits", []).append(h)
                         summaries = summarize_orf_hits(hits)
                         print(f"{len(summaries)} ORFs avec hits :")
                         for s in summaries:
@@ -609,6 +706,9 @@ def main():
                 )
                 if hits:
                     print(f"{len(hits)} domaines HMMER trouvés")
+                    for line in hits:
+                        oid = line.split()[0]
+                        orf_info.setdefault(oid, {}).setdefault("hmmer_hits", []).append(line)
                     if args.orf_detailed:
                         for h in hits:
                             print(h)
@@ -616,6 +716,10 @@ def main():
                     print("Aucun domaine trouvé (HMMER/PFAM).")
             except RuntimeError as err:
                 print(err)
+
+    if need_prodigal:
+        print_header("Détails des ORFs")
+        print_orf_details(orf_info, selected_seq_id)
 
 
 if __name__ == "__main__":
