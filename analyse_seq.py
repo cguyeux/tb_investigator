@@ -334,6 +334,55 @@ def blast_hits(fasta: str, db: str, evalue: float = 1e-5) -> List[str]:
     return hits
 
 
+def blast_significant_hits(
+    fasta: str,
+    db: str,
+    evalue: float = 1e-5,
+    min_pident: float = 95.0,
+    min_cov: float = 0.5,
+) -> Dict[str, List[str]]:
+    """Return significant BLASTn hits grouped by query.
+
+    A hit is kept if ``pident`` is at least ``min_pident`` and the alignment
+    length covers at least ``min_cov`` of the query sequence.
+    """
+
+    cmd = [
+        "blastn",
+        "-query",
+        fasta,
+        "-db",
+        db,
+        "-evalue",
+        str(evalue),
+        "-outfmt",
+        "6 qseqid sseqid pident length qlen",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "blastn not found. Install BLAST+ to use this option."
+        ) from exc
+
+    hits: Dict[str, List[str]] = {}
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("\t")
+        if len(parts) < 5:
+            continue
+        qid, sid, pid, length, qlen = parts[:5]
+        try:
+            pid_f = float(pid)
+            cov = int(length) / float(qlen)
+        except ValueError:
+            continue
+        if pid_f >= min_pident and cov >= min_cov:
+            hits.setdefault(qid, [])
+            if sid not in hits[qid]:
+                hits[qid].append(sid)
+    return hits
+
+
 def run_isescan(fasta: str, isescan: str, outdir: str) -> bool:
     """Lance ISEScan sur *fasta*. Retourne True si IS trouvés."""
     os.makedirs(outdir, exist_ok=True)
@@ -508,6 +557,10 @@ def print_orf_details(orf_info: Dict[str, Dict[str, Any]], seqname: str) -> None
             details.append("HMMER:")
             for line in info["hmmer_hits"]:
                 details.append(f"  {line}")
+        if "tb_hits" in info and info["tb_hits"]:
+            details.append("mydb:")
+            for name in info["tb_hits"]:
+                details.append(f"  {name}")
         for d in details:
             print(d)
 
@@ -532,6 +585,11 @@ def main():
     parser.add_argument(
         "--phage-db",
         help="Base BLAST de phages, située dans bdd/",
+    )
+    parser.add_argument(
+        "--tb-db",
+        default="bdd/mydb",
+        help="Base BLASTn de séquences connues de M. tuberculosis",
     )
     parser.add_argument("--isescan", help="Chemin vers isescan.py")
     parser.add_argument(
@@ -606,6 +664,8 @@ def main():
         args.plasmid_db = add_bdd_prefix(args.plasmid_db)
     if args.phage_db:
         args.phage_db = add_bdd_prefix(args.phage_db)
+    if args.tb_db:
+        args.tb_db = add_bdd_prefix(args.tb_db)
     if args.orf_db:
         args.orf_db = [add_bdd_prefix(db) for db in args.orf_db]
 
@@ -673,6 +733,22 @@ def main():
                 print("Possible phage origin for:", ", ".join(hits))
             else:
                 print("No phage match found.")
+
+    if args.tb_db:
+        print_header("Recherche de séquences M. tuberculosis (BLASTn)")
+        print(
+            f"Commande : blastn -query {args.fasta} -db {args.tb_db} -evalue {args.evalue}"
+        )
+        try:
+            tb_hits_map = blast_significant_hits(args.fasta, args.tb_db, args.evalue)
+            tb_hits = tb_hits_map.get(selected_seq_id, [])
+        except RuntimeError as err:
+            print(err)
+        else:
+            if tb_hits:
+                print("Séquences correspondantes :", ", ".join(tb_hits))
+            else:
+                print("Aucune correspondance significative.")
 
     if args.isescan:
         print_header("Recherche d'IS avec ISEScan")
@@ -797,6 +873,35 @@ def main():
                     print("Aucun domaine trouvé (HMMER/PFAM).")
             except RuntimeError as err:
                 print(err)
+
+        if args.tb_db:
+            print_header("Recherche des ORFs dans la base TB (BLASTn)")
+            nuc_faa = os.path.join(args.tmpdir, "orfs", "orfs_nuc.fasta")
+            with open(nuc_faa, "w") as out:
+                for oid, info in orf_info.items():
+                    seq = info.get("nuc_sequence")
+                    if not seq:
+                        continue
+                    out.write(f">{oid}\n{seq}\n")
+            try:
+                hits_map = blast_significant_hits(nuc_faa, args.tb_db, args.evalue)
+            except RuntimeError as err:
+                print(err)
+            else:
+                if hits_map:
+                    for oid, names in hits_map.items():
+                        if names:
+                            orf_info.setdefault(oid, {}).setdefault("tb_hits", []).extend(names)
+                    total = sum(1 for n in hits_map.values() if n)
+                    if total:
+                        print(f"{total} ORFs avec correspondance dans mydb")
+                        for oid, names in hits_map.items():
+                            if names:
+                                print(f"{oid}: {', '.join(names)}")
+                    else:
+                        print("Aucun ORF n'a de correspondance significative.")
+                else:
+                    print("Aucun ORF n'a de correspondance significative.")
 
     if need_prodigal:
         print_header("Détails des ORFs")

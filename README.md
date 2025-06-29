@@ -95,6 +95,19 @@ des phages ou des éléments transposables.
     --isescan /path/to/isescan.py --transposonpsi /path/to/TransposonPSI.pl
 ```
 
+## Recherche dans la base interne `mydb`
+
+Une base BLAST de séquences spécifiques de *M. tuberculosis* peut être placée
+dans `bdd/mydb`. Le script la consulte automatiquement pour la séquence
+analysée et pour chaque ORF détecté :
+
+```bash
+./analyse_seq.py genome.fasta --tb-db bdd/mydb
+```
+
+Les identifiants des séquences correspondantes sont affichés si la similarité
+est d'au moins 95 % sur la moitié de la longueur de la requête.
+
 ## Lister les CDS prédits par Prodigal
 
 `analyse_seq.py` peut également lancer Prodigal pour prédire les CDS. Les
