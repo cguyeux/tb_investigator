@@ -134,9 +134,13 @@ def analyze_absent_regions(srr: str, bam: str, h37rv_fasta: str, rd_dir: str,
     final_df.to_csv(csv_out, index=False)
 
 sra_list = {
-    "SRR32024533": "M. riyadhense", # ok
+    "SRR32024533": "M. riyadhense", 
     "SRR30899481": "M. shinjukuense", # ok
+    "DRR161275": "M. shinjukuense", # ok
+    "DRR161212": "M. shinjukuense", # ok
     "SRR30899492": "M. lacus", # ok
+    "DRR161283": "M. lacus", # ok
+    "DRR161220": "M. lacus", # ok
     "SRR14802015": "M. decipiens", # ok
     "SRR12650503": "Canettii", # ok
     "ERR5159441": "Canettii", # ok
