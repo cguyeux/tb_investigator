@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -206,6 +205,70 @@ def add_nuc_sequences(orf_info: Dict[str, Dict[str, Any]], dna_seq: str) -> None
         if info.get("strand") == "-":
             sub = reverse_complement(sub)
         info["nuc_sequence"] = sub
+
+
+def seq_similarity(a: str, b: str) -> float:
+    """Retourne un pourcentage de similarité approximatif entre deux séquences."""
+    from difflib import SequenceMatcher
+
+    return SequenceMatcher(None, a, b).ratio() * 100
+
+
+def sequences_similar(a: str, b: str, threshold: float = 90.0) -> bool:
+    """Détermine si deux séquences sont similaires au-dessus d'un certain seuil."""
+    if not a or not b:
+        return False
+    return seq_similarity(a, b) >= threshold
+
+
+def collect_orfs(
+    fastas: List[str],
+    labels: List[str],
+    tmpdir: str,
+    mode: str,
+    prefix: str,
+    list_cds: str = "none",
+) -> Dict[str, Dict[str, Any]]:
+    """Extrait les ORFs de plusieurs séquences en évitant les doublons."""
+
+    all_orfs: Dict[str, Dict[str, Any]] = {}
+    orf_count = 1
+    for idx, (fasta, label) in enumerate(zip(fastas, labels)):
+        run_prefix = os.path.join(tmpdir, f"{prefix}_{idx}")
+        if list_cds != "none":
+            print_header(f"Pr\u00e9diction des CDS pour {label} (Prodigal)")
+            print(
+                f"Commande : prodigal -i {fasta} -p {mode} -a {run_prefix}.faa -f gff -o {run_prefix}.gff -q"
+            )
+        gff, faa = run_prodigal(fasta, run_prefix, mode)
+        if list_cds in ("summary", "full"):
+            cds = parse_gff(gff)
+            if list_cds == "full":
+                for c in cds:
+                    print("\t".join([c["seqid"], c["start"], c["end"], c["strand"], c["id"]]))
+            else:
+                summarize_cds(cds)
+            print(f"CDS annotations written to {gff}")
+            print(f"Protein translations written to {faa}")
+        orfs = parse_prodigal_faa(faa)
+        dna_seq = parse_fasta_sequences(fasta).get(first_fasta_header(fasta), "")
+        if dna_seq:
+            add_nuc_sequences(orfs, dna_seq)
+        for oid, info in orfs.items():
+            seq = info.get("sequence", "")
+            found = None
+            for ex_id, ex_info in all_orfs.items():
+                if sequences_similar(seq, ex_info.get("sequence", "")):
+                    found = ex_id
+                    break
+            if found:
+                all_orfs[found].setdefault("files", set()).add(label)
+            else:
+                new_id = f"ORF{orf_count}"
+                orf_count += 1
+                info["files"] = {label}
+                all_orfs[new_id] = info
+    return all_orfs
 
 
 def parse_gff_dict(gff: str) -> Dict[str, Dict[str, Any]]:
@@ -780,7 +843,6 @@ def print_header(title: str) -> None:
 
 def print_orf_details(
     orf_info: Dict[str, Dict[str, Any]],
-    seqname: str,
     lineage_db_dir: str | None = None,
     evalue: float = 1e-5,
     tmpdir: str = "tmp",
@@ -789,16 +851,15 @@ def print_orf_details(
 
     Si ``lineage_db_dir`` est fourni, un arbre ASCII du complexe est affiché
     pour chaque ORF avec le pourcentage de couverture BLASTn dans chaque
-    sous-lignée.
+    sous-lignée. Les ORFs peuvent provenir de plusieurs fichiers multi-FASTA
+    et l'information d'origine est rappelée.
     """
-    for oid, info in sorted(orf_info.items(), key=lambda x: x[1].get("start", 0)):
+    for oid, info in sorted(orf_info.items(), key=lambda x: x[0]):
         print("-" * 60)
         strand = info.get("strand", "+")
         orientation = "brin complément" if strand == "-" else "brin direct"
-        short_oid = oid
-        if oid.startswith(seqname + "_"):
-            short_oid = oid[len(seqname) + 1 :]
-        header = f"{seqname}_{short_oid}_{info.get('start','?')}-{info.get('end','?')}_{orientation}"
+        header = f"{oid}_{info.get('start','?')}-{info.get('end','?')}_{orientation}"
+        files = ", ".join(sorted(info.get("files", [])))
         prot_seq = info.get("sequence", "")
         nuc_seq = info.get("nuc_sequence", "")
         print(f">{header}")
@@ -806,6 +867,7 @@ def print_orf_details(
             print(prot_seq)
         if nuc_seq:
             print(nuc_seq)
+        print(f"Présent dans : {files}")
         details = []
         if lineage_db_dir and nuc_seq:
             os.makedirs(tmpdir, exist_ok=True)
@@ -1032,7 +1094,7 @@ def main():
         print(f"Fichier temporaire : {fasta_path}")
         selected_fastas.append(fasta_path)
 
-    args.fasta = align_sequences(selected_fastas, args.tmpdir)
+    args.fasta = selected_fastas[0]
     selected_seq_id = first_fasta_header(args.fasta)
 
     if args.lineage_db_dir:
@@ -1187,41 +1249,28 @@ def main():
     orf_info: Dict[str, Dict[str, Any]] = {}
 
     if need_prodigal:
-        prefix = os.path.join(args.tmpdir, args.prodigal_prefix)
-        os.makedirs(os.path.dirname(prefix), exist_ok=True)
-        if args.list_cds != "none":
-            print_header("Prédiction des CDS avec Prodigal")
-            print(
-                f"Commande : prodigal -i {args.fasta} -p {args.prodigal_mode} -a {prefix}.faa -f gff -o {prefix}.gff -q"
-            )
-        try:
-            gff, faa = run_prodigal(args.fasta, prefix, args.prodigal_mode)
-            orf_dir = os.path.join(args.tmpdir, "orfs")
-            os.makedirs(orf_dir, exist_ok=True)
-            shutil.copy(faa, os.path.join(orf_dir, "orfs.faa"))
-            if args.list_cds in ("summary", "full"):
-                cds = parse_gff(gff)
-                if args.list_cds == "full":
-                    for c in cds:
-                        print(
-                            "\t".join([
-                                c["seqid"],
-                                c["start"],
-                                c["end"],
-                                c["strand"],
-                                c["id"],
-                            ])
-                        )
-                else:
-                    summarize_cds(cds)
-                print(f"CDS annotations written to {gff}")
-                print(f"Protein translations written to {faa}")
-            orf_info = parse_prodigal_faa(faa)
-            dna_seq = parse_fasta_sequences(args.fasta).get(selected_seq_id, "")
-            if dna_seq:
-                add_nuc_sequences(orf_info, dna_seq)
-        except Exception as err:
-            print(f"Prodigal failed: {err}")
+        labels = []
+        for (fname, sname), fasta in zip(pairs, selected_fastas):
+            label = os.path.basename(fname)
+            if sname:
+                label += f":{sname}"
+            labels.append(label)
+        orf_info = collect_orfs(
+            selected_fastas,
+            labels,
+            args.tmpdir,
+            args.prodigal_mode,
+            args.prodigal_prefix,
+            args.list_cds,
+        )
+        orf_dir = os.path.join(args.tmpdir, "orfs")
+        os.makedirs(orf_dir, exist_ok=True)
+        faa = os.path.join(orf_dir, "orfs.faa")
+        with open(faa, "w") as out:
+            for oid, info in orf_info.items():
+                seq = info.get("sequence")
+                if seq:
+                    out.write(f">{oid}\n{seq}\n")
 
 
     # Recherche optionnelle d'ORFs et annotation par BLAST
@@ -1346,7 +1395,6 @@ def main():
         print_header("Détails des ORFs")
         print_orf_details(
             orf_info,
-            selected_seq_id,
             args.lineage_db_dir,
             args.evalue,
             args.tmpdir,
