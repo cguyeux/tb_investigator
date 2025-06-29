@@ -4,3 +4,12 @@ fastq/
 alignments/
 tmp/
 bdd/
+venv/
+FragGeneScan/
+ISEScan/
+ISfinder-sequences/
+*so
+done.pkl
+eggnog-mapper/
+results/
+
