@@ -153,6 +153,14 @@ threads.
 Vous pouvez également fournir `--kegg-db` ou `--go-db` pour réaliser une
 annotation par BLASTp contre une base KEGG Orthology ou Gene Ontology.
 
+## Analyse de sélection positive/négative
+
+Ajoutez l'option `--dnds` pour calculer un ratio dN/dS entre chaque ORF
+prédit et son meilleur orthologue trouvé dans la base spécifiée par
+`--dnds-db` (ou `--tb-db` si elle n'est pas fournie). Ce test rapide indique
+si la séquence semble conservée (`dN/dS < 1`) ou soumise à une sélection
+positive (`dN/dS > 1`).
+
 ## Localiser une perte dans H37Rv
 
 En fournissant `--h37rv-db` (base BLAST du génome H37Rv) et `--h37rv-gff`,
