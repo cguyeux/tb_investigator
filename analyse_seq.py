@@ -535,6 +535,59 @@ def run_hmmer(
     return hits
 
 
+def parse_emapper_annotations(path: str) -> Dict[str, Dict[str, str]]:
+    """Parse an eggNOG-mapper annotation file."""
+    annotations: Dict[str, Dict[str, str]] = {}
+    header: List[str] | None = None
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("#"):
+                if line.startswith("#query"):
+                    header = line[1:].strip().split("\t")
+                continue
+            if header is None:
+                continue
+            parts = line.rstrip("\n").split("\t")
+            row = {k: parts[i] if i < len(parts) else "" for i, k in enumerate(header)}
+            qid = row.get("query") or row.get("query_name") or row.get("#query")
+            if not qid:
+                continue
+            annotations[qid] = {
+                "eggnog_preferred": row.get("Preferred_name", ""),
+                "eggnog_description": row.get("Description", ""),
+            }
+    return annotations
+
+
+def run_eggnog_mapper(
+    faa: str, outdir: str, cpu: int = 1, data_dir: str | None = None
+) -> Dict[str, Dict[str, str]]:
+    """Run eggNOG-mapper on ``faa`` and return parsed annotations."""
+    os.makedirs(outdir, exist_ok=True)
+    prefix = "eggnog"
+    cmd = [
+        "emapper.py",
+        "-i",
+        faa,
+        "-o",
+        prefix,
+        "--output_dir",
+        outdir,
+        "--cpu",
+        str(cpu),
+    ]
+    if data_dir:
+        cmd.extend(["--data_dir", data_dir])
+    try:
+        subprocess.run(cmd, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "emapper.py not found. Install eggnog-mapper to use this option."
+        ) from exc
+    ann_path = os.path.join(outdir, f"{prefix}.emapper.annotations")
+    return parse_emapper_annotations(ann_path)
+
+
 def print_header(title: str) -> None:
     """Affiche un titre encadré de séparateurs."""
     bar = "=" * 60
@@ -580,6 +633,11 @@ def print_orf_details(orf_info: Dict[str, Dict[str, Any]], seqname: str) -> None
                     "  "
                     + f"{h['sseqid']} identité {h['pident']:.1f}% qcov {h['qcov']:.1f}% scov {h['scov']:.1f}%{note}"
                 )
+        if "eggnog_description" in info or "eggnog_preferred" in info:
+            desc = info.get("eggnog_description", "")
+            pref = info.get("eggnog_preferred", "")
+            joined = f"{pref} {desc}".strip()
+            details.append(f"eggNOG: {joined}")
         for d in details:
             print(d)
 
@@ -666,6 +724,21 @@ def main():
             "Mot-clé pour filtrer les hits BLAST/HMMER sur les ORFs. "
             'Utiliser "none" pour désactiver le filtrage.'
         ),
+    )
+    parser.add_argument(
+        "--eggnog",
+        action="store_true",
+        help="Annoter les ORFs avec eggnog-mapper",
+    )
+    parser.add_argument(
+        "--eggnog-data",
+        help="Répertoire des données eggnog-mapper",
+    )
+    parser.add_argument(
+        "--eggnog-cpu",
+        type=int,
+        default=1,
+        help="Nombre de threads pour eggnog-mapper",
     )
     parser.add_argument(
         "--lineage-db-dir",
@@ -904,6 +977,24 @@ def main():
                             print(h)
                 else:
                     print("Aucun domaine trouvé (HMMER/PFAM).")
+            except RuntimeError as err:
+                print(err)
+
+        if args.eggnog:
+            print_header("Annotation fonctionnelle avec eggnog-mapper")
+            try:
+                ann = run_eggnog_mapper(
+                    faa,
+                    os.path.join(args.tmpdir, "eggnog"),
+                    args.eggnog_cpu,
+                    args.eggnog_data,
+                )
+                if ann:
+                    for oid, info in ann.items():
+                        orf_info.setdefault(oid, {}).update(info)
+                    print(f"{len(ann)} ORFs annotés par eggnog-mapper")
+                else:
+                    print("Aucune annotation eggnog-mapper trouvée.")
             except RuntimeError as err:
                 print(err)
 

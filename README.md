@@ -144,3 +144,8 @@ Une recherche de domaines PFAM peut être ajoutée en indiquant `--hmmer` et la
 base `--pfam-db`. Le seuil de recherche est contrôlé par `--evalue`, utilisé
 aussi bien pour BLAST que pour HMMER. L'option `--orf-detailed` affiche alors
 les lignes complètes des résultats.
+
+Pour une annotation fonctionnelle plus complète, activez `--eggnog` pour lancer
+`eggnog-mapper` sur les protéines prédites. Utilisez `--eggnog-data` pour
+spécifier le répertoire de données et `--eggnog-cpu` pour ajuster le nombre de
+threads.
