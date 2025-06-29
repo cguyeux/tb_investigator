@@ -525,8 +525,14 @@ def main():
         nargs="?",
         help="Nom de la séquence à extraire (défaut: première)",
     )
-    parser.add_argument("--plasmid-db", help="Base BLAST de plasmides (PLSDB)")
-    parser.add_argument("--phage-db", help="Base BLAST de phages")
+    parser.add_argument(
+        "--plasmid-db",
+        help="Base BLAST de plasmides (PLSDB), située dans bdd/",
+    )
+    parser.add_argument(
+        "--phage-db",
+        help="Base BLAST de phages, située dans bdd/",
+    )
     parser.add_argument("--isescan", help="Chemin vers isescan.py")
     parser.add_argument(
         "--tmpdir", default="tmp", help="Répertoire pour les fichiers temporaires"
@@ -563,6 +569,7 @@ def main():
         action="append",
         help=(
             "Base BLAST protéines (e.g. NR ou ISFinder_proteins). "
+            "Cherchée dans bdd/ si aucun chemin n'est fourni. "
             "Peut être spécifiée plusieurs fois."
         ),
     )
@@ -588,6 +595,19 @@ def main():
         help="Répertoire des bases BLAST par sous-lignée pour afficher l'arbre",
     )
     args = parser.parse_args()
+
+    def add_bdd_prefix(db: str) -> str:
+        """Return path with bdd/ prefix if no directory is provided."""
+        if db and os.sep not in db:
+            return os.path.join("bdd", db)
+        return db
+
+    if args.plasmid_db:
+        args.plasmid_db = add_bdd_prefix(args.plasmid_db)
+    if args.phage_db:
+        args.phage_db = add_bdd_prefix(args.phage_db)
+    if args.orf_db:
+        args.orf_db = [add_bdd_prefix(db) for db in args.orf_db]
 
     print_header("Extraction de la séquence")
     try:
