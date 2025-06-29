@@ -568,6 +568,61 @@ def run_isescan(fasta: str, isescan: str, outdir: str) -> bool:
     return os.path.exists(gff)
 
 
+def run_trnascan(fasta: str, trnascan: str, outdir: str) -> List[Dict[str, Any]]:
+    """Lance tRNAscan-SE sur *fasta* et retourne les ARNt prédits."""
+
+    os.makedirs(outdir, exist_ok=True)
+    gff = os.path.join(outdir, "trnascan.gff")
+    cmd = [trnascan, "-j", gff, fasta]
+    try:
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"{trnascan} not found. Install tRNAscan-SE to use this option."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"tRNAscan-SE failed with status {exc.returncode}:\n{exc.stdout}"
+        ) from exc
+
+    features: List[Dict[str, Any]] = []
+    if os.path.exists(gff):
+        with open(gff) as fh:
+            for line in fh:
+                if line.startswith("#"):
+                    continue
+                parts = line.strip().split("\t")
+                if len(parts) < 9:
+                    continue
+                seqid, _source, type_, start, end, _score, strand, _phase, attrs = parts
+                attr_dict: Dict[str, str] = {}
+                for item in attrs.split(";"):
+                    if "=" in item:
+                        key, value = item.split("=", 1)
+                        attr_dict[key] = value
+                try:
+                    start_i = int(start)
+                    end_i = int(end)
+                except ValueError:
+                    continue
+                features.append(
+                    {
+                        "seqid": seqid,
+                        "type": type_,
+                        "start": start_i,
+                        "end": end_i,
+                        "strand": strand,
+                        "attrs": attr_dict,
+                    }
+                )
+    return features
+
+
 def predict_orfs(fasta: str, outdir: str) -> str:
     """Prédis les ORFs avec prodigal (mode metagenomic, robustes pour contigs)."""
     os.makedirs(outdir, exist_ok=True)
@@ -949,6 +1004,10 @@ def main():
     )
     parser.add_argument("--isescan", help="Chemin vers isescan.py")
     parser.add_argument(
+        "--trnascan",
+        help="Chemin vers tRNAscan-SE pour détecter les ARNt",
+    )
+    parser.add_argument(
         "--tmpdir", default="tmp", help="Répertoire pour les fichiers temporaires"
     )
     parser.add_argument(
@@ -1254,6 +1313,24 @@ def main():
                 else "ISEScan found no IS elements."
             )
             print(msg)
+        except RuntimeError as err:
+            print(err)
+
+    if args.trnascan:
+        print_header("Recherche d'ARNt avec tRNAscan-SE")
+        outdir = os.path.join(args.tmpdir, "trnascan")
+        gff_path = os.path.join(outdir, "trnascan.gff")
+        print(f"Commande : {args.trnascan} -j {gff_path} {args.fasta}")
+        try:
+            trnas = run_trnascan(args.fasta, args.trnascan, outdir)
+            if trnas:
+                print(f"{len(trnas)} ARNt détectés")
+                for t in trnas:
+                    attrs = t.get("attrs", {})
+                    name = attrs.get("product") or attrs.get("ID", "tRNA")
+                    print(f"- {t['seqid']}:{t['start']}-{t['end']} {t['strand']} {name}")
+            else:
+                print("Aucun ARNt détecté.")
         except RuntimeError as err:
             print(err)
 
