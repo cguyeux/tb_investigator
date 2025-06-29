@@ -355,21 +355,20 @@ for SRR in [u for u in sra_list if u not in done]:
     print(f" - On téléchage {SRR} ({sra_list[SRR]})")
     os.system(f"fasterq-dump -e 16 --split-files --force --outdir fastq {SRR}")
     print(f" - Nettoyage {SRR} ({sra_list[SRR]})")
-    subprocess.run(
-        [
-            "python3",
-            "preprocess_reads.py",
-            "-1",
-            f"fastq/{SRR}_1.fastq",
-            "-2",
-            f"fastq/{SRR}_2.fastq",
-            "-o",
-            f"fastq/cleaned/{SRR}",
-            "--threads",
-            "16",
-        ],
-        check=True,
-    )
+    cmd = [
+        "python3",
+        "preprocess_reads.py",
+        "-1",
+        f"fastq/{SRR}_1.fastq",
+        "-o",
+        f"fastq/cleaned/{SRR}",
+        "--threads",
+        "16",
+    ]
+    if os.path.exists(f"fastq/{SRR}_2.fastq"):
+        cmd.extend(["-2", f"fastq/{SRR}_2.fastq"])
+
+    subprocess.run(cmd, check=True)
     print(f" - On aligne {SRR} ({sra_list[SRR]})")
     os.system(
         f"bwa mem -t 16 data/H37Rv.fasta fastq/cleaned/{SRR}_1.fastq fastq/cleaned/{SRR}_2.fastq > alignments/{SRR}.sam"
