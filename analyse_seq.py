@@ -3,7 +3,9 @@ import argparse
 import os
 import shutil
 import subprocess
-from typing import Dict, List, Any
+import sys
+from collections import Counter
+from typing import Dict, List, Any, Tuple
 from ete3 import Tree
 
 
@@ -233,10 +235,16 @@ def first_fasta_header(fasta: str) -> str:
     return ""
 
 
-def extract_sequence(filename: str, seqname: str | None, tmpdir: str) -> str:
-    """Extrait une séquence d'un multi-FASTA dans ``tmpdir`` et retourne son chemin."""
+def extract_sequence(
+    filename: str, seqname: str | None, tmpdir: str, prefix: str = "selected"
+) -> str:
+    """Extrait une séquence d'un multi-FASTA dans ``tmpdir``.
+
+    Le fichier FASTA resultants sera ``prefix``.fasta dans ``tmpdir`` et son
+    chemin est renvoyé.
+    """
     os.makedirs(tmpdir, exist_ok=True)
-    out_fasta = os.path.join(tmpdir, "selected.fasta")
+    out_fasta = os.path.join(tmpdir, f"{prefix}.fasta")
 
     current_id = None
     wanted = seqname
@@ -264,6 +272,74 @@ def extract_sequence(filename: str, seqname: str | None, tmpdir: str) -> str:
         out.write(f">{current_id}\n")
         out.write("\n".join(seq_lines) + "\n")
     return out_fasta
+
+
+def consensus_from_alignment(aln_fasta: str) -> str:
+    """Construit une séquence consensus à partir d'un alignement FASTA."""
+    seqs = parse_fasta_sequences(aln_fasta)
+    if not seqs:
+        return ""
+    sequences = list(seqs.values())
+    length = len(sequences[0])
+    cons = []
+    for i in range(length):
+        column = [s[i] for s in sequences if i < len(s)]
+        column = [c for c in column if c != "-"]
+        if not column:
+            cons.append("N")
+        else:
+            counts = Counter(column)
+            base = max(counts.items(), key=lambda x: x[1])[0]
+            cons.append(base)
+    return "".join(cons)
+
+
+def align_sequences(fastas: List[str], tmpdir: str) -> str:
+    """Aligne plusieurs séquences avec MAFFT et renvoie le fichier consensus."""
+    if len(fastas) == 1:
+        return fastas[0]
+
+    os.makedirs(tmpdir, exist_ok=True)
+    lengths = [compute_total_length(f) for f in fastas]
+    idx_ref = lengths.index(max(lengths))
+    ref = fastas[idx_ref]
+    fragments = [f for i, f in enumerate(fastas) if i != idx_ref]
+
+    frag_path = os.path.join(tmpdir, "fragments.fasta")
+    with open(frag_path, "w") as out:
+        for path in fragments:
+            with open(path) as fh:
+                out.write(fh.read())
+
+    ref_aln = os.path.join(tmpdir, "ref_aligned.fasta")
+    with open(ref_aln, "w") as out:
+        try:
+            subprocess.run(["mafft", ref], check=True, text=True, stdout=out)
+        except FileNotFoundError as exc:
+            raise RuntimeError("mafft not found") from exc
+
+    final_aln = os.path.join(tmpdir, "final_alignment.fasta")
+    with open(final_aln, "w") as out:
+        try:
+            subprocess.run(
+                ["mafft", "--addfragments", frag_path, ref_aln],
+                check=True,
+                text=True,
+                stdout=out,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("mafft not found") from exc
+
+    print_header("Alignement multiple (MAFFT)")
+    with open(final_aln) as fh:
+        print(fh.read())
+
+    consensus_seq = consensus_from_alignment(final_aln)
+    consensus_path = os.path.join(tmpdir, "consensus.fasta")
+    with open(consensus_path, "w") as out:
+        out.write(">consensus\n")
+        out.write(consensus_seq + "\n")
+    return consensus_path
 
 
 def blast_coverage(fasta: str, db: str, evalue: float = 1e-5) -> float:
@@ -739,13 +815,15 @@ def main():
         description="Analyse GC et recherche d'origine (plasmide, phage, IS, transposon, annotation d'ORFs)"
     )
     parser.add_argument(
-        "filename",
-        help="Fichier multi-FASTA contenant la séquence à analyser",
+        "--filename",
+        action="append",
+        required=True,
+        help="Fichier multi-FASTA contenant la séquence à analyser. Peut être spécifié plusieurs fois.",
     )
     parser.add_argument(
-        "seqname",
-        nargs="?",
-        help="Nom de la séquence à extraire (défaut: première)",
+        "--seqname",
+        action="append",
+        help="Nom de la séquence à extraire juste après chaque --filename. Si omis, la première séquence sera utilisée.",
     )
     parser.add_argument(
         "--plasmid-db",
@@ -870,14 +948,44 @@ def main():
         args.orf_db = [add_bdd_prefix(db) for db in args.orf_db]
 
     print_header("Extraction de la séquence")
-    try:
-        args.fasta = extract_sequence(args.filename, args.seqname, args.tmpdir)
-    except Exception as err:
-        parser.error(str(err))
-    print(f"Fichier d'entrée : {args.filename}")
-    if args.seqname:
-        print(f"Séquence extraite : {args.seqname}")
-    print(f"Fichier temporaire : {args.fasta}")
+
+    # Reconstitue la liste (filename, seqname) en suivant l'ordre
+    def parse_pairs(argv: List[str]) -> List[Tuple[str, str | None]]:
+        pairs: List[Tuple[str, str | None]] = []
+        i = 0
+        while i < len(argv):
+            if argv[i] == "--filename":
+                if i + 1 >= len(argv):
+                    parser.error("--filename doit être suivi d'un chemin")
+                fname = argv[i + 1]
+                i += 2
+                sname: str | None = None
+                if i < len(argv) and argv[i] == "--seqname":
+                    if i + 1 >= len(argv):
+                        parser.error("--seqname doit être suivi d'un identifiant")
+                    sname = argv[i + 1]
+                    i += 2
+                pairs.append((fname, sname))
+            else:
+                i += 1
+        return pairs
+
+    pairs = parse_pairs(sys.argv[1:])
+
+    selected_fastas: List[str] = []
+    for idx, (fname, sname) in enumerate(pairs):
+        try:
+            fasta_path = extract_sequence(fname, sname, args.tmpdir, f"selected_{idx}")
+        except Exception as err:
+            parser.error(str(err))
+        if sname is None:
+            print(f"{fname} : pas de --seqname fourni, première séquence utilisée")
+        else:
+            print(f"{fname} : séquence {sname} extraite")
+        print(f"Fichier temporaire : {fasta_path}")
+        selected_fastas.append(fasta_path)
+
+    args.fasta = align_sequences(selected_fastas, args.tmpdir)
     selected_seq_id = first_fasta_header(args.fasta)
 
     if args.lineage_db_dir:
