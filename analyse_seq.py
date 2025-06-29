@@ -879,6 +879,127 @@ def annotate_go(
     return blast_annotation(faa, db, evalue, r"GO:\d+", "go")
 
 
+#############################
+# dN/dS utility functions
+#############################
+
+# Simple codon to amino acid table (standard genetic code)
+BASES = "TCAG"
+AMINO_ACIDS = (
+    "FFLLSSSSYY**CC*W"  # TTT ... TGG
+    "LLLLPPPPHHQQRRRR"
+    "IIIMTTTTNNNKSSSS"
+    "VVVVAAAADDDDEEEE"
+)
+CODONS = [a + b + c for a in BASES for b in BASES for c in BASES]
+CODON_TABLE = {codon: aa for codon, aa in zip(CODONS, AMINO_ACIDS)}
+
+
+def translate_codon(codon: str) -> str:
+    """Return amino acid for ``codon`` using the standard genetic code."""
+    return CODON_TABLE.get(codon.upper(), "X")
+
+
+def pairwise_dnds(seq1: str, seq2: str) -> tuple[float, float, float]:
+    """Compute a naive dN/dS ratio between two aligned coding sequences."""
+
+    length = min(len(seq1), len(seq2))
+    length -= length % 3
+    if length == 0:
+        return 0.0, 0.0, float("nan")
+
+    nonsyn = 0
+    syn = 0
+    codon_count = length // 3
+    for i in range(0, length, 3):
+        c1 = seq1[i : i + 3].upper()
+        c2 = seq2[i : i + 3].upper()
+        if c1 == c2:
+            continue
+        aa1 = translate_codon(c1)
+        aa2 = translate_codon(c2)
+        if aa1 == aa2:
+            syn += 1
+        else:
+            nonsyn += 1
+    dN = nonsyn / codon_count
+    dS = syn / codon_count
+    ratio = dN / dS if dS > 0 else float("inf")
+    return dN, dS, ratio
+
+
+def fetch_db_sequence(db: str, entry: str) -> str:
+    """Return the nucleotide sequence ``entry`` from BLAST database ``db``."""
+
+    cmd = ["blastdbcmd", "-db", db, "-entry", entry, "-outfmt", "%s"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "blastdbcmd not found. Install BLAST+ to use this option."
+        ) from exc
+    return "".join(result.stdout.split())
+
+
+def best_db_hit(fasta: str, db: str, evalue: float = 1e-5) -> str | None:
+    """Return the identifier of the best BLASTn hit for ``fasta``."""
+
+    cmd = [
+        "blastn",
+        "-query",
+        fasta,
+        "-db",
+        db,
+        "-max_target_seqs",
+        "1",
+        "-outfmt",
+        "6 sseqid",
+        "-evalue",
+        str(evalue),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "blastn not found. Install BLAST+ to use this option."
+        ) from exc
+    line = result.stdout.strip().splitlines()
+    return line[0].strip() if line else None
+
+
+def compute_dnds_for_orfs(
+    orf_info: Dict[str, Dict[str, Any]],
+    db: str,
+    evalue: float,
+    tmpdir: str,
+) -> None:
+    """Compute dN/dS ratios for ORFs against ``db`` best hits."""
+
+    os.makedirs(tmpdir, exist_ok=True)
+    for oid, info in orf_info.items():
+        nuc = info.get("nuc_sequence")
+        if not nuc:
+            continue
+        query_fasta = os.path.join(tmpdir, f"{oid}_query.fa")
+        with open(query_fasta, "w") as out:
+            out.write(f">{oid}\n{nuc}\n")
+        try:
+            best = best_db_hit(query_fasta, db, evalue)
+        except RuntimeError as err:
+            print(err)
+            return
+        if not best:
+            continue
+        try:
+            ref_seq = fetch_db_sequence(db, best)
+        except RuntimeError as err:
+            print(err)
+            return
+        dN, dS, ratio = pairwise_dnds(nuc, ref_seq)
+        info["dnds"] = {"dN": dN, "dS": dS, "ratio": ratio, "subject": best}
+
+
+
 def blast_first_hit(fasta: str, db: str, evalue: float = 1e-5) -> Dict[str, Any] | None:
     """Return first BLASTn hit with coordinates against ``db``."""
     cmd = [
@@ -1066,6 +1187,15 @@ def print_orf_details(
             desc = info.get("go_description", "")
             joined = f"{go} {desc}".strip()
             details.append(f"GO: {joined}")
+        if "dnds" in info:
+            d = info["dnds"]
+            ratio = d.get("ratio")
+            dn = d.get("dN")
+            ds = d.get("dS")
+            subject = d.get("subject", "")
+            details.append(
+                f"dN/dS contre {subject}: {ratio:.3f} (dN={dn:.3f}, dS={ds:.3f})"
+            )
         for d in details:
             print(d)
 
@@ -1217,6 +1347,17 @@ def main():
         "--lineage-db-dir",
         help="Répertoire des bases BLAST par sous-lignée pour afficher l'arbre",
     )
+    parser.add_argument(
+        "--dnds",
+        action="store_true",
+        help=(
+            "Calculer le ratio dN/dS pour chaque ORF à partir du meilleur orthologue"
+        ),
+    )
+    parser.add_argument(
+        "--dnds-db",
+        help="Base BLASTn des orthologues pour le calcul dN/dS (par défaut --tb-db)",
+    )
     args = parser.parse_args()
 
     def add_bdd_prefix(db: str) -> str:
@@ -1239,6 +1380,10 @@ def main():
         args.kegg_db = add_bdd_prefix(args.kegg_db)
     if args.go_db:
         args.go_db = add_bdd_prefix(args.go_db)
+    if args.dnds_db:
+        args.dnds_db = add_bdd_prefix(args.dnds_db)
+    elif args.dnds:
+        args.dnds_db = args.tb_db
 
     print_header("Extraction de la séquence")
 
@@ -1651,6 +1796,25 @@ def main():
                         print("Aucun ORF n'a de correspondance significative.")
                 else:
                     print("Aucun ORF n'a de correspondance significative.")
+
+        if args.dnds:
+            print_header("Analyse de sélection (dN/dS)")
+            compute_dnds_for_orfs(
+                orf_info,
+                args.dnds_db,
+                args.evalue,
+                os.path.join(args.tmpdir, "dnds"),
+            )
+            total = sum(1 for i in orf_info.values() if "dnds" in i)
+            if total:
+                for oid, info in orf_info.items():
+                    if "dnds" in info:
+                        d = info["dnds"]
+                        print(
+                            f"{oid}: {d['subject']} dN/dS {d['ratio']:.3f}"
+                        )
+            else:
+                print("Aucun ratio dN/dS calculé.")
 
     if need_prodigal:
         print_header("Détails des ORFs")
