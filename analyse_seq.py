@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import shutil
 import subprocess
 from typing import Dict, List
 from ete3 import Tree
@@ -388,8 +389,13 @@ def main():
     )
     parser.add_argument(
         "--list-cds",
-        action="store_true",
-        help="Lancer Prodigal et afficher un résumé des CDS prédits",
+        choices=["none", "summary", "full"],
+        default="none",
+        help=(
+            "Contrôle l'affichage des CDS prédits par Prodigal : "
+            "'summary' pour un résumé, 'full' pour tout afficher, "
+            "'none' pour ne rien afficher"
+        ),
     )
     parser.add_argument(
         "--prodigal-prefix",
@@ -407,11 +413,6 @@ def main():
         type=float,
         default=1e-5,
         help="Seuil d'e-value pour BLAST et HMMER",
-    )
-    parser.add_argument(
-        "--orf-search",
-        action="store_true",
-        help="Prédire les ORFs et faire une recherche de transposase",
     )
     parser.add_argument(
         "--orf-db",
@@ -525,30 +526,44 @@ def main():
         except RuntimeError as err:
             print(err)
 
-    if args.list_cds:
-        print_header("Prédiction des CDS avec Prodigal")
+    need_prodigal = args.list_cds != "none" or args.orf_db or (
+        args.hmmer and args.pfam_db
+    )
+
+    if need_prodigal:
         prefix = os.path.join(args.tmpdir, args.prodigal_prefix)
         os.makedirs(os.path.dirname(prefix), exist_ok=True)
-        print(
-            f"Commande : prodigal -i {args.fasta} -p {args.prodigal_mode} -a {prefix}.faa -f gff -o {prefix}.gff -q"
-        )
+        if args.list_cds != "none":
+            print_header("Prédiction des CDS avec Prodigal")
+            print(
+                f"Commande : prodigal -i {args.fasta} -p {args.prodigal_mode} -a {prefix}.faa -f gff -o {prefix}.gff -q"
+            )
         try:
             gff, faa = run_prodigal(args.fasta, prefix, args.prodigal_mode)
-            cds = parse_gff(gff)
-            summarize_cds(cds)
-            print(f"CDS annotations written to {gff}")
-            print(f"Protein translations written to {faa}")
+            orf_dir = os.path.join(args.tmpdir, "orfs")
+            os.makedirs(orf_dir, exist_ok=True)
+            shutil.copy(faa, os.path.join(orf_dir, "orfs.faa"))
+            if args.list_cds in ("summary", "full"):
+                cds = parse_gff(gff)
+                if args.list_cds == "full":
+                    for c in cds:
+                        print(
+                            "\t".join(
+                                [c["seqid"], c["start"], c["end"], c["strand"], c["id"]]
+                            )
+                        )
+                else:
+                    summarize_cds(cds)
+                print(f"CDS annotations written to {gff}")
+                print(f"Protein translations written to {faa}")
         except Exception as err:
             print(f"Prodigal failed: {err}")
 
 
     # Recherche optionnelle d'ORFs et annotation par BLAST
-    if args.orf_search:
+    if args.orf_db or (args.hmmer and args.pfam_db):
+        faa = os.path.join(args.tmpdir, "orfs", "orfs.faa")
         print_header("Recherche de protéines par ORF/BLASTp")
-        faa = predict_orfs(args.fasta, os.path.join(args.tmpdir, "orfs"))
-        print(
-            f"Commande : prodigal -i {args.fasta} -a {os.path.join(args.tmpdir, 'orfs', 'orfs.faa')} -p meta -q"
-        )
         orf_total = count_fasta_seqs(faa)
         print(f"{orf_total} ORFs prédits")
         if args.orf_db:
