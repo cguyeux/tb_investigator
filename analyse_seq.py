@@ -1105,12 +1105,15 @@ def main():
         coverages: Dict[str, float] = {}
         for leaf in tree.iter_leaves():
             db_prefix = os.path.join(args.lineage_db_dir, leaf.name)
-            try:
-                pct = blast_coverage(args.fasta, db_prefix, args.evalue)
-            except RuntimeError as err:
-                print(err)
-                pct = 0.0
-            coverages[leaf.name] = pct
+            values = []
+            for fasta in selected_fastas:
+                try:
+                    pct = blast_coverage(fasta, db_prefix, args.evalue)
+                except RuntimeError as err:
+                    print(err)
+                    pct = 0.0
+                values.append(pct)
+            coverages[leaf.name] = sum(values) / len(values) if values else 0.0
         for leaf in tree.iter_leaves():
             pct = coverages.get(leaf.name, 0.0)
             leaf.name = f"{leaf.name} ({pct:.1f}%)"

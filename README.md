@@ -61,7 +61,8 @@ Le pourcentage de GC est affiché sur la sortie standard avec deux décimales.
 Si vous disposez de bases BLAST par sous-lignée (dans un répertoire `bdd/` par
 exemple), le script peut afficher un arbre phylogénétique ASCII indiquant pour
 chaque feuille le pourcentage de la séquence retrouvée dans la base
-correspondante :
+correspondante. Lorsque plusieurs séquences sont fournies via `--filename`,
+les pourcentages sont la moyenne calculée sur l'ensemble de ces entrées :
 
 ```bash
 ./analyse_seq.py sequences.fasta --lineage-db-dir bdd
