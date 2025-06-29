@@ -571,6 +571,7 @@ def run_eggnog_mapper(
         faa,
         "-o",
         prefix,
+        "--override",
         "--output_dir",
         outdir,
         "--cpu",
