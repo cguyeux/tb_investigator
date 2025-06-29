@@ -408,7 +408,7 @@ def align_sequences(fastas: List[str], tmpdir: str) -> str:
         print(fh.read())
 
     consensus_seq = consensus_from_alignment(final_aln)
-    consensus_path = os.path.join(tmpdir, "consensus.fasta")
+    consensus_path = os.path.join(tmpdir, "consensus.fa")
     with open(consensus_path, "w") as out:
         out.write(">consensus\n")
         out.write(consensus_seq + "\n")
@@ -1082,6 +1082,7 @@ def main():
     pairs = parse_pairs(sys.argv[1:])
 
     selected_fastas: List[str] = []
+    labels: List[str] = []
     for idx, (fname, sname) in enumerate(pairs):
         try:
             fasta_path = extract_sequence(fname, sname, args.tmpdir, f"selected_{idx}")
@@ -1093,9 +1094,16 @@ def main():
             print(f"{fname} : séquence {sname} extraite")
         print(f"Fichier temporaire : {fasta_path}")
         selected_fastas.append(fasta_path)
+        label = os.path.basename(fname)
+        if sname:
+            label += f":{sname}"
+        labels.append(label)
 
+    selected_seq_ids = [first_fasta_header(f) for f in selected_fastas]
+
+    # Maintain backward compatibility: the first sequence is used for
+    # analyses that do not support multiple inputs yet.
     args.fasta = selected_fastas[0]
-    selected_seq_id = first_fasta_header(args.fasta)
 
     if args.lineage_db_dir:
         print_header("Recherche de la sous-lignée (BLASTn)")
@@ -1120,57 +1128,61 @@ def main():
         print(tree.get_ascii(attributes=[]))
 
     print_header("Calcul du contenu GC")
-    print(f"Fichier analysé : {args.fasta}")
-    gc = compute_gc(args.fasta)
-    print(f"GC content: {gc:.2f}%")
+    print("Fichiers analysés : " + ", ".join(selected_fastas))
+    gc_values = [compute_gc(f) for f in selected_fastas]
+    avg_gc = sum(gc_values) / len(gc_values) if gc_values else 0.0
+    print(f"GC content: {avg_gc:.2f}%")
 
     if args.plasmid_db:
         print_header("Recherche de plasmides (BLASTn)")
-        print(
-            f"Commande : blastn -query {args.fasta} -db {args.plasmid_db} -evalue {args.evalue}"
-        )
-        try:
-            hits = blast_hits(args.fasta, args.plasmid_db, args.evalue)
-        except RuntimeError as err:
-            print(err)
-        else:
+        for fasta, label in zip(selected_fastas, labels):
+            print(
+                f"Commande : blastn -query {fasta} -db {args.plasmid_db} -evalue {args.evalue}"
+            )
+            try:
+                hits = blast_hits(fasta, args.plasmid_db, args.evalue)
+            except RuntimeError as err:
+                print(err)
+                continue
             if hits:
-                print("Possible plasmid origin for:", ", ".join(hits))
+                print(f"{label} : Possible plasmid origin for: " + ", ".join(hits))
             else:
-                print("No plasmid match found.")
+                print(f"{label} : No plasmid match found.")
 
     if args.phage_db:
         print_header("Recherche de phages (BLASTn)")
-        print(
-            f"Commande : blastn -query {args.fasta} -db {args.phage_db} -evalue {args.evalue}"
-        )
-        try:
-            hits = blast_hits(args.fasta, args.phage_db, args.evalue)
-        except RuntimeError as err:
-            print(err)
-        else:
+        for fasta, label in zip(selected_fastas, labels):
+            print(
+                f"Commande : blastn -query {fasta} -db {args.phage_db} -evalue {args.evalue}"
+            )
+            try:
+                hits = blast_hits(fasta, args.phage_db, args.evalue)
+            except RuntimeError as err:
+                print(err)
+                continue
             if hits:
-                print("Possible phage origin for:", ", ".join(hits))
+                print(f"{label} : Possible phage origin for: " + ", ".join(hits))
             else:
-                print("No phage match found.")
+                print(f"{label} : No phage match found.")
 
     if args.tb_db:
         print_header("Recherche de séquences M. tuberculosis (BLASTn)")
-        print(
-            f"Commande : blastn -query {args.fasta} -db {args.tb_db} -evalue {args.evalue}"
-        )
-        if os.path.normpath(args.tb_db) == os.path.normpath("bdd/mydb"):
+        for fasta, label, seq_id in zip(selected_fastas, labels, selected_seq_ids):
             print(
-                "Base interne bdd/mydb contenant des contigs et regions specifiques de M. tuberculosis."
+                f"Commande : blastn -query {fasta} -db {args.tb_db} -evalue {args.evalue}"
             )
-        try:
-            tb_hits_map = blast_significant_hits(
-                args.fasta, args.tb_db, args.evalue
-            )
-            tb_hits = tb_hits_map.get(selected_seq_id, [])
-        except RuntimeError as err:
-            print(err)
-        else:
+            if os.path.normpath(args.tb_db) == os.path.normpath("bdd/mydb"):
+                print(
+                    "Base interne bdd/mydb contenant des contigs et regions specifiques de M. tuberculosis."
+                )
+            try:
+                tb_hits_map = blast_significant_hits(
+                    fasta, args.tb_db, args.evalue
+                )
+                tb_hits = tb_hits_map.get(seq_id, [])
+            except RuntimeError as err:
+                print(err)
+                continue
             if tb_hits:
                 for h in tb_hits:
                     note = (
@@ -1182,7 +1194,7 @@ def main():
                         f"{h['sseqid']}: identite {h['pident']:.1f}% qcov {h['qcov']:.1f}% scov {h['scov']:.1f}%{note}"
                     )
             else:
-                print("Aucune correspondance significative.")
+                print(f"{label}: Aucune correspondance significative.")
 
     if args.h37rv_db:
         print_header("Position dans H37Rv (BLASTn)")
