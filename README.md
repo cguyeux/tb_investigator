@@ -94,34 +94,34 @@ des phages ou des éléments transposables.
 
 ## Lister les CDS prédits par Prodigal
 
-`analyse_seq.py` peut également lancer Prodigal pour prédire les CDS et en
-afficher un résumé. Les annotations GFF et les protéines traduites sont écrites
-à l'emplacement spécifié par `--prodigal-prefix` (dans `--tmpdir` par défaut).
+`analyse_seq.py` peut également lancer Prodigal pour prédire les CDS. Les
+annotations GFF et les protéines traduites sont écrites à l'emplacement
+spécifié par `--prodigal-prefix` (dans `--tmpdir` par défaut). Les protéines
+prédites sont toujours copiées dans `tmp/orfs/orfs.faa` pour une éventuelle
+recherche BLAST ou HMMER.
 
 ### Usage
 
 ```bash
-./analyse_seq.py genome.fasta --list-cds --prodigal-prefix resultat/prodigal
+./analyse_seq.py genome.fasta --list-cds summary --prodigal-prefix resultat/prodigal
 ```
 
 Les fichiers `resultat/prodigal.gff` et `resultat/prodigal.faa` contiendront
-respectivement les coordonnées des CDS et leurs séquences protéiques.
+respectivement les coordonnées des CDS et leurs séquences protéiques. Utilisez
+`--list-cds full` pour afficher toutes les entrées ou `--list-cds none` pour ne
+pas afficher de résumé.
 
 ## Recherche de protéines par BLASTX
 
-L'option `--orf-search` prédit les ORF avec Prodigal puis interroge une ou
-plusieurs bases BLAST protéiques. Utilisez `--orf-db` plusieurs fois pour
-indiquer les bases à interroger. Par défaut, seuls les hits contenant le mot
-clé "transposase" sont résumés. Le script indique pour chaque ORF le meilleur
-hit trouvé. Utilisez l'option `--orf-detailed` pour obtenir la sortie BLAST
-complète. Vous pouvez spécifier un autre mot-clé avec `--orf-keyword` ou
-désactiver le filtrage en passant `--orf-keyword none`.
+Spécifiez une ou plusieurs bases avec `--orf-db` pour interroger les protéines
+prédites. Par défaut, seuls les hits contenant le mot clé "transposase" sont
+résumés. Utilisez `--orf-detailed` pour obtenir la sortie BLAST complète ou
+changez le mot-clé avec `--orf-keyword` ("none" pour désactiver le filtrage).
 
 ### Exemple
 
 ```bash
-./analyse_seq.py genome.fasta --orf-search \
-    --orf-db myco_proteins --orf-db isfinder_prot
+./analyse_seq.py genome.fasta --orf-db myco_proteins --orf-db isfinder_prot
 ```
 
 Une recherche de domaines PFAM peut être ajoutée en indiquant `--hmmer` et la
