@@ -221,6 +221,29 @@ def sequences_similar(a: str, b: str, threshold: float = 90.0) -> bool:
     return seq_similarity(a, b) >= threshold
 
 
+def ends_similarity(seq: str, flank: int = 1000) -> float:
+    """Calcule la similarité entre les extrémités d'une séquence."""
+    if len(seq) < flank * 2:
+        return 0.0
+    start = seq[:flank]
+    end = seq[-flank:]
+    direct = seq_similarity(start, end)
+    rev = seq_similarity(start, reverse_complement(end))
+    return max(direct, rev)
+
+
+def check_circularity(
+    fasta: str, flank: int = 1000, threshold: float = 95.0
+) -> tuple[bool, float]:
+    """Teste la circularité d'un contig par similarité de ses extrémités."""
+    seqs = parse_fasta_sequences(fasta)
+    if not seqs:
+        return False, 0.0
+    sequence = next(iter(seqs.values()))
+    sim = ends_similarity(sequence, flank)
+    return sim >= threshold, sim
+
+
 def collect_orfs(
     fastas: List[str],
     labels: List[str],
@@ -1011,6 +1034,23 @@ def main():
         "--tmpdir", default="tmp", help="Répertoire pour les fichiers temporaires"
     )
     parser.add_argument(
+        "--check-circular",
+        action="store_true",
+        help="Tester la similarité des extrémités pour détecter la circularité",
+    )
+    parser.add_argument(
+        "--circular-flank",
+        type=int,
+        default=1000,
+        help="Taille (en bp) des extrémités à comparer",
+    )
+    parser.add_argument(
+        "--circular-threshold",
+        type=float,
+        default=95.0,
+        help="Seuil de similarité (%) pour signaler une circularité",
+    )
+    parser.add_argument(
         "--list-cds",
         choices=["none", "summary", "full"],
         default="none",
@@ -1191,6 +1231,24 @@ def main():
     gc_values = [compute_gc(f) for f in selected_fastas]
     avg_gc = sum(gc_values) / len(gc_values) if gc_values else 0.0
     print(f"GC content: {avg_gc:.2f}%")
+
+    if args.check_circular:
+        print_header("Test de circularité (similarité des extrémités)")
+        for fasta, label in zip(selected_fastas, labels):
+            try:
+                is_circ, sim = check_circularity(
+                    fasta,
+                    flank=args.circular_flank,
+                    threshold=args.circular_threshold,
+                )
+                msg = (
+                    f"{label} : {sim:.1f}% de similarité entre extrémités"
+                )
+                if is_circ:
+                    msg += " -> contig possiblement circulaire"
+                print(msg)
+            except Exception as err:
+                print(f"{label} : erreur pour le test de circularité : {err}")
 
     if args.plasmid_db:
         print_header("Recherche de plasmides (BLASTn)")
