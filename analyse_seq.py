@@ -816,6 +816,69 @@ def run_eggnog_mapper(
     return parse_emapper_annotations(ann_path)
 
 
+def blast_annotation(
+    faa: str,
+    db: str,
+    evalue: float,
+    pattern: str,
+    prefix: str,
+) -> Dict[str, Dict[str, str]]:
+    """Annotate proteins using BLASTp against ``db``.
+
+    ``pattern`` is a regex used to extract an identifier from the subject
+    sequence ID or description. The returned dictionary maps ORF IDs to a
+    dictionary with keys ``{prefix}_id`` and ``{prefix}_description``.
+    """
+    cmd = [
+        "blastp",
+        "-query",
+        faa,
+        "-db",
+        db,
+        "-evalue",
+        str(evalue),
+        "-outfmt",
+        "6 qseqid sseqid pident length bitscore evalue stitle",
+        "-max_target_seqs",
+        "1",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "blastp not found. Install BLAST+ to use this option."
+        ) from exc
+    ann: Dict[str, Dict[str, str]] = {}
+    import re
+
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        qid, sseqid, _pid, _len, _bits, _e, stitle = parts[:7]
+        match = re.search(pattern, sseqid) or re.search(pattern, stitle)
+        ident = match.group(0) if match else sseqid
+        ann[qid] = {
+            f"{prefix}_id": ident,
+            f"{prefix}_description": stitle,
+        }
+    return ann
+
+
+def annotate_kegg(
+    faa: str, db: str, evalue: float = 1e-5
+) -> Dict[str, Dict[str, str]]:
+    """Annotate proteins with KEGG Orthology IDs using BLASTp."""
+    return blast_annotation(faa, db, evalue, r"K\d{5}", "kegg")
+
+
+def annotate_go(
+    faa: str, db: str, evalue: float = 1e-5
+) -> Dict[str, Dict[str, str]]:
+    """Annotate proteins with Gene Ontology IDs using BLASTp."""
+    return blast_annotation(faa, db, evalue, r"GO:\d+", "go")
+
+
 def blast_first_hit(fasta: str, db: str, evalue: float = 1e-5) -> Dict[str, Any] | None:
     """Return first BLASTn hit with coordinates against ``db``."""
     cmd = [
@@ -993,13 +1056,23 @@ def print_orf_details(
             pref = info.get("eggnog_preferred", "")
             joined = f"{pref} {desc}".strip()
             details.append(f"eggNOG: {joined}")
+        if "kegg_id" in info or "kegg_description" in info:
+            ko = info.get("kegg_id", "")
+            desc = info.get("kegg_description", "")
+            joined = f"{ko} {desc}".strip()
+            details.append(f"KEGG: {joined}")
+        if "go_id" in info or "go_description" in info:
+            go = info.get("go_id", "")
+            desc = info.get("go_description", "")
+            joined = f"{go} {desc}".strip()
+            details.append(f"GO: {joined}")
         for d in details:
             print(d)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyse GC et recherche d'origine (plasmide, phage, IS, transposon, annotation d'ORFs)"
+        description="Analyse GC et recherche d'origine (plasmide, phage, IS, transposon, annotation d'ORFs, KEGG/GO)"
     )
     parser.add_argument(
         "--filename",
@@ -1104,6 +1177,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--kegg-db",
+        help="Base BLASTp annotée KEGG Orthology",
+    )
+    parser.add_argument(
+        "--go-db",
+        help="Base BLASTp annotée Gene Ontology",
+    )
+    parser.add_argument(
         "--eggnog",
         action="store_true",
         help="Annoter les ORFs avec eggnog-mapper",
@@ -1154,6 +1235,10 @@ def main():
         args.h37rv_db = add_bdd_prefix(args.h37rv_db)
     if args.orf_db:
         args.orf_db = [add_bdd_prefix(db) for db in args.orf_db]
+    if args.kegg_db:
+        args.kegg_db = add_bdd_prefix(args.kegg_db)
+    if args.go_db:
+        args.go_db = add_bdd_prefix(args.go_db)
 
     print_header("Extraction de la séquence")
 
@@ -1501,6 +1586,32 @@ def main():
                     print(f"{len(ann)} ORFs annotés par eggnog-mapper")
                 else:
                     print("Aucune annotation eggnog-mapper trouvée.")
+            except RuntimeError as err:
+                print(err)
+
+        if args.kegg_db:
+            print_header("Annotation KEGG")
+            try:
+                ann = annotate_kegg(faa, args.kegg_db, args.evalue)
+                if ann:
+                    for oid, info in ann.items():
+                        orf_info.setdefault(oid, {}).update(info)
+                    print(f"{len(ann)} ORFs annotés via KEGG")
+                else:
+                    print("Aucune annotation KEGG trouvée.")
+            except RuntimeError as err:
+                print(err)
+
+        if args.go_db:
+            print_header("Annotation Gene Ontology")
+            try:
+                ann = annotate_go(faa, args.go_db, args.evalue)
+                if ann:
+                    for oid, info in ann.items():
+                        orf_info.setdefault(oid, {}).update(info)
+                    print(f"{len(ann)} ORFs annotés via GO")
+                else:
+                    print("Aucune annotation GO trouvée.")
             except RuntimeError as err:
                 print(err)
 
