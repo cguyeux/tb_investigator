@@ -150,6 +150,8 @@ Pour une annotation fonctionnelle plus complète, activez `--eggnog` pour lancer
 `eggnog-mapper` sur les protéines prédites. Utilisez `--eggnog-data` pour
 spécifier le répertoire de données et `--eggnog-cpu` pour ajuster le nombre de
 threads.
+Vous pouvez également fournir `--kegg-db` ou `--go-db` pour réaliser une
+annotation par BLASTp contre une base KEGG Orthology ou Gene Ontology.
 
 ## Localiser une perte dans H37Rv
 
@@ -181,6 +183,8 @@ python analyse_seq.py \
   --eggnog \
   --eggnog-data eggnog-mapper/data \
   --eggnog-cpu 16 \
+  --kegg-db bdd/kegg_prot \
+  --go-db bdd/go_prot \
   --h37rv-db data/H37Rv.fasta \
   --h37rv-gff data/sequences/CDS/Mycobacterium_tuberculosis_H37Rv_gff_v5.gff \
   --context-window 8000
