@@ -477,11 +477,11 @@ for SRR in [u for u in sra_list if u not in done]:
             concat(f"data/RD/{nom}.fasta")
         
 
-    os.system(f"makeblastdb -in data/all_contigs.fasta -dbtype nucl -out mydb")
+    os.system(f"makeblastdb -in data/all_contigs.fasta -dbtype nucl -out bdd/mydb")
     done.append(SRR)
     with open('done.pkl', 'wb') as f:
         pickle.dump(done, f)
         exit()    
 
-# blastn -query data/sequences/TbD1.fasta -db mydb
-# blastn -query data/sequences/TbD1.fasta -db mydb -outfmt '6 qseqid sseqid pident length bitscore evalue qstart qend sstart send' -max_target_seqs 1 -evalue 1e-5
+# blastn -query data/sequences/TbD1.fasta -db bdd/mydb
+# blastn -query data/sequences/TbD1.fasta -db bdd/mydb -outfmt '6 qseqid sseqid pident length bitscore evalue qstart qend sstart send' -max_target_seqs 1 -evalue 1e-5
