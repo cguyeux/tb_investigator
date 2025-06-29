@@ -181,7 +181,9 @@ python analyse_seq.py \
   --eggnog \
   --eggnog-data eggnog-mapper/data \
   --eggnog-cpu 16 \
-  --h37rv-db data/H37Rv.fasta \
+  --h37rv-db bdd/H37Rv.fasta \
   --h37rv-gff data/sequences/CDS/Mycobacterium_tuberculosis_H37Rv_gff_v5.gff \
-  --context-window 8000
+  --context-window 8000 \
+  --trnascan /usr/bin/trnascan-1.4 \
+  --check-circular
 ```
