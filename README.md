@@ -163,8 +163,8 @@ python analyse_seq.py \
   --filename ../L8_investigations/contigs_ERR12115321_filtered.fasta --seqname NODE_3_length_3231_cov_125.486367 \
   --filename ../L8_investigations/contigs_SRR10828835_filtered.fasta --seqname NODE_2_length_3097_cov_99.353311 \
   --filename ../L8_investigations/contigs_SRR1173284_filtered.fasta --seqname NODE_1_length_5572_cov_25.084622 \
-  --filename ../L10_investigations/contigs_ERR2707158_filtered.fasta --seqname NODE_3_length_3096_cov_16.757204 \
-  --filename ../L10_investigations/contigs_ERR2516384_filtered.fasta --seqname NODE_3_length_3107_cov_57.167987 \
+  --filename ../L10_investigations/contigs_ERR2516384_filtered.fasta --seqname NODE_3_length_3096_cov_16.757204 \
+  --filename ../L10_investigations/contigs_ERR2707158_filtered.fasta --seqname NODE_3_length_3107_cov_57.167987 \
   --lineage-db-dir bdd/ \
   --plasmid-db bdd/plsdb \
   --phage-db bdd/phagedb \
