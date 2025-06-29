@@ -41,6 +41,9 @@ les en-têtes FASTA sont nettoyés pour supprimer les caractères spéciaux.
 Ceci évite les erreurs `makeblastdb` quand des symboles non ASCII comme `Δ`
 apparaissent dans les noms de séquences.
 
+La base BLAST finale est écrite dans le répertoire `bdd/` sous le nom
+`mydb` pour éviter de créer des fichiers à la racine du projet.
+
 ## Calcul du taux de GC
 
 Le script `analyse_seq.py` calcule le pourcentage global de GC d'un fichier FASTA.
