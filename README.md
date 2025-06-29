@@ -155,3 +155,32 @@ threads.
 En fournissant `--h37rv-db` (base BLAST du génome H37Rv) et `--h37rv-gff`,
 `analyse_seq.py` indique la position de la meilleure correspondance et les gènes
 présents dans une fenêtre définie par `--context-window` autour de cette région.
+
+### Exemple complet
+
+```bash
+python analyse_seq.py \
+  --filename ../L8_investigations/contigs_ERR12115321_filtered.fasta --seqname NODE_3_length_3231_cov_125.486367 \
+  --filename ../L8_investigations/contigs_SRR10828835_filtered.fasta --seqname NODE_2_length_3097_cov_99.353311 \
+  --filename ../L8_investigations/contigs_SRR1173284_filtered.fasta --seqname NODE_1_length_5572_cov_25.084622 \
+  --filename ../L10_investigations/contigs_ERR2707158_filtered.fasta --seqname NODE_3_length_3096_cov_16.757204 \
+  --filename ../L10_investigations/contigs_ERR2516384_filtered.fasta --seqname NODE_3_length_3107_cov_57.167987 \
+  --lineage-db-dir bdd/ \
+  --plasmid-db bdd/plsdb \
+  --phage-db bdd/phagedb \
+  --isescan ISEScan/isescan.py \
+  --list-cds full \
+  --prodigal-mode meta \
+  --orf-db bdd/myco_proteins \
+  --orf-db bdd/isfinder_prot \
+  --hmmer \
+  --pfam-db Pfam-A.hmm \
+  --orf-keyword none \
+  --orf-detailed \
+  --eggnog \
+  --eggnog-data eggnog-mapper/data \
+  --eggnog-cpu 16 \
+  --h37rv-db data/H37Rv.fasta \
+  --h37rv-gff data/sequences/CDS/Mycobacterium_tuberculosis_H37Rv_gff_v5.gff \
+  --context-window 8000
+```
