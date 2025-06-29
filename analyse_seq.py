@@ -566,7 +566,7 @@ def run_eggnog_mapper(
     os.makedirs(outdir, exist_ok=True)
     prefix = "eggnog"
     cmd = [
-        "emapper.py",
+        "eggnog-mapper/emapper.py",
         "-i",
         faa,
         "-o",
