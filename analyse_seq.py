@@ -541,10 +541,6 @@ def main():
         except Exception as err:
             print(f"Prodigal failed: {err}")
 
-    # Désactivation par défaut de TransposonPSI car obsolète/incompatible
-    # if args.transposonpsi:
-    #     print("ATTENTION : TransposonPSI nécessite BLAST legacy et est souvent incompatible BLAST+.")
-    #     # Ajoute ici si besoin la gestion si BLAST legacy disponible
 
     # Recherche optionnelle d'ORFs et annotation par BLAST
     if args.orf_search:
