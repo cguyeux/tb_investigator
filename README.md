@@ -149,3 +149,9 @@ Pour une annotation fonctionnelle plus complète, activez `--eggnog` pour lancer
 `eggnog-mapper` sur les protéines prédites. Utilisez `--eggnog-data` pour
 spécifier le répertoire de données et `--eggnog-cpu` pour ajuster le nombre de
 threads.
+
+## Localiser une perte dans H37Rv
+
+En fournissant `--h37rv-db` (base BLAST du génome H37Rv) et `--h37rv-gff`,
+`analyse_seq.py` indique la position de la meilleure correspondance et les gènes
+présents dans une fenêtre définie par `--context-window` autour de cette région.

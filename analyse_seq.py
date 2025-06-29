@@ -589,6 +589,97 @@ def run_eggnog_mapper(
     return parse_emapper_annotations(ann_path)
 
 
+def blast_first_hit(fasta: str, db: str, evalue: float = 1e-5) -> Dict[str, Any] | None:
+    """Return first BLASTn hit with coordinates against ``db``."""
+    cmd = [
+        "blastn",
+        "-query",
+        fasta,
+        "-db",
+        db,
+        "-max_target_seqs",
+        "1",
+        "-outfmt",
+        "6 sseqid sstart send qstart qend pident qcovs sstrand",
+        "-evalue",
+        str(evalue),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "blastn not found. Install BLAST+ to use this option."
+        ) from exc
+    line = result.stdout.strip().splitlines()
+    if not line:
+        return None
+    parts = line[0].split("\t")
+    if len(parts) < 8:
+        return None
+    sseqid, sstart, send, qstart, qend, pid, qcov, strand = parts[:8]
+    try:
+        return {
+            "sseqid": sseqid,
+            "sstart": int(sstart),
+            "send": int(send),
+            "qstart": int(qstart),
+            "qend": int(qend),
+            "pident": float(pid),
+            "qcov": float(qcov),
+            "strand": strand,
+        }
+    except ValueError:
+        return None
+
+
+def parse_general_gff(gff: str) -> List[Dict[str, Any]]:
+    """Parse a GFF file and return a list of gene/CDS features."""
+    features: List[Dict[str, Any]] = []
+    with open(gff) as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            parts = line.strip().split("\t")
+            if len(parts) < 9:
+                continue
+            seqid, _source, type_, start, end, _score, strand, _phase, attrs = parts
+            if type_ not in {"gene", "CDS"}:
+                continue
+            attr_dict: Dict[str, str] = {}
+            for item in attrs.split(";"):
+                if "=" in item:
+                    key, value = item.split("=", 1)
+                    attr_dict[key] = value
+            try:
+                start_i = int(start)
+                end_i = int(end)
+            except ValueError:
+                continue
+            features.append(
+                {
+                    "seqid": seqid,
+                    "start": start_i,
+                    "end": end_i,
+                    "strand": strand,
+                    "attrs": attr_dict,
+                }
+            )
+    return features
+
+
+def features_in_window(features: List[Dict[str, Any]], seqid: str, start: int, end: int) -> List[Dict[str, Any]]:
+    """Return features overlapping [start, end] on ``seqid``."""
+    subset = []
+    for feat in features:
+        if feat["seqid"] != seqid:
+            continue
+        if feat["end"] < start or feat["start"] > end:
+            continue
+        subset.append(feat)
+    subset.sort(key=lambda x: x["start"])
+    return subset
+
+
 def print_header(title: str) -> None:
     """Affiche un titre encadré de séparateurs."""
     bar = "=" * 60
@@ -742,6 +833,20 @@ def main():
         help="Nombre de threads pour eggnog-mapper",
     )
     parser.add_argument(
+        "--h37rv-db",
+        help="Base BLASTn du génome H37Rv pour localiser la perte",
+    )
+    parser.add_argument(
+        "--h37rv-gff",
+        help="Annotations GFF de H37Rv pour décrire le contexte",
+    )
+    parser.add_argument(
+        "--context-window",
+        type=int,
+        default=1000,
+        help="Taille en bp de la fenêtre autour de la perte",
+    )
+    parser.add_argument(
         "--lineage-db-dir",
         help="Répertoire des bases BLAST par sous-lignée pour afficher l'arbre",
     )
@@ -759,6 +864,8 @@ def main():
         args.phage_db = add_bdd_prefix(args.phage_db)
     if args.tb_db:
         args.tb_db = add_bdd_prefix(args.tb_db)
+    if args.h37rv_db:
+        args.h37rv_db = add_bdd_prefix(args.h37rv_db)
     if args.orf_db:
         args.orf_db = [add_bdd_prefix(db) for db in args.orf_db]
 
@@ -856,6 +963,50 @@ def main():
                     )
             else:
                 print("Aucune correspondance significative.")
+
+    if args.h37rv_db:
+        print_header("Position dans H37Rv (BLASTn)")
+        try:
+            hit = blast_first_hit(args.fasta, args.h37rv_db, args.evalue)
+        except RuntimeError as err:
+            print(err)
+        else:
+            if hit:
+                start = min(hit["sstart"], hit["send"])
+                end = max(hit["sstart"], hit["send"])
+                print(
+                    f"Correspondance principale : {hit['sseqid']}:{start}-{end} ({hit['strand']})"
+                )
+                if args.h37rv_gff:
+                    try:
+                        feats = parse_general_gff(args.h37rv_gff)
+                    except FileNotFoundError:
+                        print(f"Fichier {args.h37rv_gff} introuvable")
+                    else:
+                        win_start = max(1, start - args.context_window)
+                        win_end = end + args.context_window
+                        context = features_in_window(
+                            feats, hit["sseqid"], win_start, win_end
+                        )
+                        if context:
+                            print(
+                                f"G\u00e8nes dans la fen\u00eatre {win_start}-{win_end} :"
+                            )
+                            for feat in context:
+                                attrs = feat["attrs"]
+                                name = (
+                                    attrs.get("gene")
+                                    or attrs.get("Name")
+                                    or attrs.get("locus_tag", "")
+                                )
+                                product = attrs.get("product", "")
+                                print(
+                                    f"- {name} {feat['start']}-{feat['end']} {feat['strand']} {product}"
+                                )
+                        else:
+                            print("Aucun g\u00e8ne dans la fen\u00eatre sp\u00e9cifi\u00e9e.")
+            else:
+                print("Pas de correspondance dans H37Rv.")
 
     if args.isescan:
         print_header("Recherche d'IS avec ISEScan")
