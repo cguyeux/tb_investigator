@@ -340,8 +340,12 @@ def blast_significant_hits(
     evalue: float = 1e-5,
     min_pident: float = 95.0,
     min_cov: float = 0.5,
-) -> Dict[str, List[str]]:
-    """Return significant BLASTn hits grouped by query.
+) -> Dict[str, List[Dict[str, float]]]:
+    """Return detailed BLASTn hits grouped by query.
+
+    Each hit dictionary contains ``sseqid`` (subject id), ``pident`` (percent
+    identity) as well as query and subject coverage percentages (``qcov`` and
+    ``scov``).
 
     A hit is kept if ``pident`` is at least ``min_pident`` and the alignment
     length covers at least ``min_cov`` of the query sequence.
@@ -356,7 +360,7 @@ def blast_significant_hits(
         "-evalue",
         str(evalue),
         "-outfmt",
-        "6 qseqid sseqid pident length qlen",
+        "6 qseqid sseqid pident length qlen slen",
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -365,21 +369,30 @@ def blast_significant_hits(
             "blastn not found. Install BLAST+ to use this option."
         ) from exc
 
-    hits: Dict[str, List[str]] = {}
+    hits: Dict[str, List[Dict[str, float]]] = {}
     for line in result.stdout.strip().splitlines():
         parts = line.split("\t")
-        if len(parts) < 5:
+        if len(parts) < 6:
             continue
-        qid, sid, pid, length, qlen = parts[:5]
+        qid, sid, pid, length, qlen, slen = parts[:6]
         try:
             pid_f = float(pid)
-            cov = int(length) / float(qlen)
+            length_i = int(length)
+            qlen_f = float(qlen)
+            slen_f = float(slen)
         except ValueError:
             continue
-        if pid_f >= min_pident and cov >= min_cov:
-            hits.setdefault(qid, [])
-            if sid not in hits[qid]:
-                hits[qid].append(sid)
+        qcov = length_i / qlen_f
+        scov = length_i / slen_f if slen_f else 0.0
+        if pid_f >= min_pident and qcov >= min_cov:
+            hits.setdefault(qid, []).append(
+                {
+                    "sseqid": sid,
+                    "pident": pid_f,
+                    "qcov": qcov * 100,
+                    "scov": scov * 100,
+                }
+            )
     return hits
 
 
@@ -559,8 +572,14 @@ def print_orf_details(orf_info: Dict[str, Dict[str, Any]], seqname: str) -> None
                 details.append(f"  {line}")
         if "tb_hits" in info and info["tb_hits"]:
             details.append("mydb:")
-            for name in info["tb_hits"]:
-                details.append(f"  {name}")
+            for h in info["tb_hits"]:
+                note = (
+                    " (unmapped)" if "unmapped" in h.get("sseqid", "") else ""
+                )
+                details.append(
+                    "  "
+                    + f"{h['sseqid']} identité {h['pident']:.1f}% qcov {h['qcov']:.1f}% scov {h['scov']:.1f}%{note}"
+                )
         for d in details:
             print(d)
 
@@ -739,14 +758,28 @@ def main():
         print(
             f"Commande : blastn -query {args.fasta} -db {args.tb_db} -evalue {args.evalue}"
         )
+        if os.path.normpath(args.tb_db) == os.path.normpath("bdd/mydb"):
+            print(
+                "Base interne bdd/mydb contenant des contigs et regions specifiques de M. tuberculosis."
+            )
         try:
-            tb_hits_map = blast_significant_hits(args.fasta, args.tb_db, args.evalue)
+            tb_hits_map = blast_significant_hits(
+                args.fasta, args.tb_db, args.evalue
+            )
             tb_hits = tb_hits_map.get(selected_seq_id, [])
         except RuntimeError as err:
             print(err)
         else:
             if tb_hits:
-                print("Séquences correspondantes :", ", ".join(tb_hits))
+                for h in tb_hits:
+                    note = (
+                        " (match dans une zone ne mappant pas sur H37Rv)"
+                        if "unmapped" in h["sseqid"]
+                        else ""
+                    )
+                    print(
+                        f"{h['sseqid']}: identite {h['pident']:.1f}% qcov {h['qcov']:.1f}% scov {h['scov']:.1f}%{note}"
+                    )
             else:
                 print("Aucune correspondance significative.")
 
@@ -889,15 +922,23 @@ def main():
                 print(err)
             else:
                 if hits_map:
-                    for oid, names in hits_map.items():
-                        if names:
-                            orf_info.setdefault(oid, {}).setdefault("tb_hits", []).extend(names)
+                    for oid, hits in hits_map.items():
+                        if hits:
+                            orf_info.setdefault(oid, {}).setdefault("tb_hits", []).extend(hits)
                     total = sum(1 for n in hits_map.values() if n)
                     if total:
                         print(f"{total} ORFs avec correspondance dans mydb")
-                        for oid, names in hits_map.items():
-                            if names:
-                                print(f"{oid}: {', '.join(names)}")
+                        for oid, hits in hits_map.items():
+                            if hits:
+                                for h in hits:
+                                    note = (
+                                        " (match dans une zone ne mappant pas sur H37Rv)"
+                                        if "unmapped" in h["sseqid"]
+                                        else ""
+                                    )
+                                    print(
+                                        f"{oid}: {h['sseqid']} identite {h['pident']:.1f}% qcov {h['qcov']:.1f}% scov {h['scov']:.1f}%{note}"
+                                    )
                     else:
                         print("Aucun ORF n'a de correspondance significative.")
                 else:
