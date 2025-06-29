@@ -744,6 +744,7 @@ def parse_general_gff(gff: str) -> List[Dict[str, Any]]:
             features.append(
                 {
                     "seqid": seqid,
+                    "type": type_,
                     "start": start_i,
                     "end": end_i,
                     "strand": strand,
@@ -764,6 +765,11 @@ def features_in_window(features: List[Dict[str, Any]], seqid: str, start: int, e
         subset.append(feat)
     subset.sort(key=lambda x: x["start"])
     return subset
+
+
+def format_gff_attributes(attrs: Dict[str, str]) -> str:
+    """Return attributes as a single string sorted by key."""
+    return ";".join(f"{k}={v}" for k, v in sorted(attrs.items()))
 
 
 def print_header(title: str) -> None:
@@ -1148,9 +1154,9 @@ def main():
                                     or attrs.get("Name")
                                     or attrs.get("locus_tag", "")
                                 )
-                                product = attrs.get("product", "")
+                                attr_str = format_gff_attributes(attrs)
                                 print(
-                                    f"- {name} {feat['start']}-{feat['end']} {feat['strand']} {product}"
+                                    f"- {name} {feat['start']}-{feat['end']} {feat['strand']} {attr_str}"
                                 )
                         else:
                             print("Aucun g\u00e8ne dans la fen\u00eatre sp\u00e9cifi\u00e9e.")
