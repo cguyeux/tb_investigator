@@ -9,6 +9,16 @@ from typing import Dict, List, Any, Tuple
 from ete3 import Tree
 
 
+# Newick tree describing the M. tuberculosis complex lineages
+LINEAGE_NEWICK = (
+    "(M.riyadhense, (M.shinjukuense, (M.lacus, (M.decipiens,(Canettii, (L8, ((L1, (L7, "
+    "((L4.1, (L4.2, (((L4.4, L4.13), (L4.17, (L4.3, L4.18))), (L4.14, (L4.5, "
+    "((L4.6.1, L4.6.2), (L4.11, (L4.12, (L4.16, (L4.15, (L4.7, ((L4.9, L4.9H37Rv), L4.8)))))))))))), "
+    "(L3, (L2.1proto, L2.2))))), (L5, (((Pinipedii, Microti), (OrygisLa3, (BovisLa1, (CapraeLa2, La4)))), "
+    "((L10, ((L6.1, (L6.2, L6.3)), L9)), (Chimpanze, (Mungi, (Dassie, Suricattae)))))))))))));"
+)
+
+
 def run_prodigal(fasta: str, prefix: str, mode: str = "meta") -> tuple[str, str]:
     """Run prodigal and return paths to GFF and protein FASTA."""
     gff = f"{prefix}.gff"
@@ -762,8 +772,19 @@ def print_header(title: str) -> None:
     print(f"\n{bar}\n{title}\n{bar}")
 
 
-def print_orf_details(orf_info: Dict[str, Dict[str, Any]], seqname: str) -> None:
-    """Affiche les séquences ORF et leurs informations."""
+def print_orf_details(
+    orf_info: Dict[str, Dict[str, Any]],
+    seqname: str,
+    lineage_db_dir: str | None = None,
+    evalue: float = 1e-5,
+    tmpdir: str = "tmp",
+) -> None:
+    """Affiche les séquences ORF et leurs informations.
+
+    Si ``lineage_db_dir`` est fourni, un arbre ASCII du complexe est affiché
+    pour chaque ORF avec le pourcentage de couverture BLASTn dans chaque
+    sous-lignée.
+    """
     for oid, info in sorted(orf_info.items(), key=lambda x: x[1].get("start", 0)):
         print("-" * 60)
         strand = info.get("strand", "+")
@@ -780,6 +801,26 @@ def print_orf_details(orf_info: Dict[str, Dict[str, Any]], seqname: str) -> None
         if nuc_seq:
             print(nuc_seq)
         details = []
+        if lineage_db_dir and nuc_seq:
+            os.makedirs(tmpdir, exist_ok=True)
+            orf_fasta = os.path.join(tmpdir, f"{oid}.fasta")
+            with open(orf_fasta, "w") as out:
+                out.write(f">{oid}\n{nuc_seq}\n")
+            tree = Tree(LINEAGE_NEWICK)
+            coverages: Dict[str, float] = {}
+            for leaf in tree.iter_leaves():
+                db_prefix = os.path.join(lineage_db_dir, leaf.name)
+                try:
+                    pct = blast_coverage(orf_fasta, db_prefix, evalue)
+                except RuntimeError as err:
+                    print(err)
+                    pct = 0.0
+                coverages[leaf.name] = pct
+            for leaf in tree.iter_leaves():
+                pct = coverages.get(leaf.name, 0.0)
+                leaf.name = f"{leaf.name} ({pct:.1f}%)"
+            details.append("Sous-lignées:")
+            details.append(tree.get_ascii(attributes=[]).rstrip())
         if "blast_hits" in info and info["blast_hits"]:
             details.append("BLASTp:")
             for h in info["blast_hits"]:
@@ -1297,7 +1338,13 @@ def main():
 
     if need_prodigal:
         print_header("Détails des ORFs")
-        print_orf_details(orf_info, selected_seq_id)
+        print_orf_details(
+            orf_info,
+            selected_seq_id,
+            args.lineage_db_dir,
+            args.evalue,
+            args.tmpdir,
+        )
 
 
 if __name__ == "__main__":
