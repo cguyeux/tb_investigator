@@ -609,8 +609,9 @@ def run_trnascan(fasta: str, trnascan: str, outdir: str) -> List[Dict[str, Any]]
             f"{trnascan} not found. Install tRNAscan-SE to use this option."
         ) from exc
     except subprocess.CalledProcessError as exc:
+        error_output = exc.stdout + (exc.stderr or "")
         raise RuntimeError(
-            f"tRNAscan-SE failed with status {exc.returncode}:\n{exc.stdout}"
+            f"tRNAscan-SE failed with status {exc.returncode}:\n{error_output}"
         ) from exc
 
     features: List[Dict[str, Any]] = []
