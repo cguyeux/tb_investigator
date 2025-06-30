@@ -51,8 +51,11 @@ passés à SPAdes.
 
 Lors de la construction des bases de données de régions de délétions (RD),
 les en-têtes FASTA sont nettoyés pour supprimer les caractères spéciaux.
-Ceci évite les erreurs `makeblastdb` quand des symboles non ASCII comme `Δ`
-apparaissent dans les noms de séquences.
+Les noms dupliqués sont également renommés automatiquement pour garantir
+des identifiants uniques et éviter les erreurs de type `duplicate seq_ids`
+lors de l'exécution de `makeblastdb`. Les caractères non ASCII comme `Δ`
+ou les espaces sont ainsi éliminés et les doublons reçoivent un suffixe
+numéroté.
 
 La base BLAST finale est écrite dans le répertoire `bdd/` sous le nom
 `mydb` pour éviter de créer des fichiers à la racine du projet.

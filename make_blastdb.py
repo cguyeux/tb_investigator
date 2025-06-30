@@ -85,6 +85,7 @@ def build_rd_fasta(rd_dir: str, rd_fasta: str) -> None:
     """Concatenate all RD FASTA files found in ``rd_dir``.
     Headers are sanitized to avoid non-ASCII characters."""
 
+    counts = {}
     with open(rd_fasta, "w") as out:
         for fname in sorted(os.listdir(rd_dir)):
             if not fname.endswith(".fasta"):
@@ -95,7 +96,10 @@ def build_rd_fasta(rd_dir: str, rd_fasta: str) -> None:
                 for line in fh:
                     last = line
                     if line.startswith(">"):
-                        clean = sanitize_header(line[1:].strip())
+                        base = sanitize_header(line[1:].strip())
+                        idx = counts.get(base, 0)
+                        counts[base] = idx + 1
+                        clean = base if idx == 0 else f"{base}_{idx+1}"
                         out.write(f">{clean}\n")
                     else:
                         out.write(line)
