@@ -2,7 +2,7 @@ import os
 import pickle
 import subprocess
 import unicodedata
-from typing import List
+from typing import List, Optional, Tuple
 
 
 def preprocess_nanopore(read_fastq: str, out_prefix: str, threads: int = 16) -> str:
@@ -23,6 +23,35 @@ def preprocess_nanopore(read_fastq: str, out_prefix: str, threads: int = 16) -> 
         check=True,
     )
     return cleaned
+
+
+def detect_fastq_files(srr: str) -> Tuple[str, Optional[str]]:
+    """Return paths to raw FASTQ files for ``srr``.
+
+    The function deals with varying naming conventions observed after
+    ``fasterq-dump --split-files``. It looks for paired ``_1``/``_2`` files,
+    single ``.fastq`` files or cases where the second mate is labelled
+    ``_4.fastq``.
+    """
+
+    r1 = os.path.join("fastq", f"{srr}_1.fastq")
+    r2 = os.path.join("fastq", f"{srr}_2.fastq")
+
+    if os.path.exists(r1) and os.path.exists(r2):
+        return r1, r2
+
+    alt2 = os.path.join("fastq", f"{srr}_4.fastq")
+    if os.path.exists(r1) and os.path.exists(alt2):
+        return r1, alt2
+
+    single = os.path.join("fastq", f"{srr}.fastq")
+    if os.path.exists(single):
+        return single, None
+
+    if os.path.exists(r1):
+        return r1, None
+
+    raise FileNotFoundError(f"No FASTQ files found for {srr}")
 
 import pandas as pd
 from Bio import SeqIO
@@ -379,7 +408,13 @@ for SRR in [u for u in sra_list if u not in done]:
     print(f" - On téléchage {SRR} ({sra_list[SRR]})")
     os.system(f"fasterq-dump -e 16 --split-files --force --outdir fastq {SRR}")
 
-    paired = os.path.exists(f"fastq/{SRR}_2.fastq")
+    try:
+        raw_r1, raw_r2 = detect_fastq_files(SRR)
+    except FileNotFoundError as e:
+        print(e)
+        continue
+
+    paired = raw_r2 is not None
     print(f" - Nettoyage {SRR} ({sra_list[SRR]})")
 
     if paired:
@@ -387,17 +422,17 @@ for SRR in [u for u in sra_list if u not in done]:
             "python3",
             "preprocess_reads.py",
             "-1",
-            f"fastq/{SRR}_1.fastq",
+            raw_r1,
             "-o",
             f"fastq/cleaned/{SRR}",
             "--threads",
             "16",
         ]
-        cmd.extend(["-2", f"fastq/{SRR}_2.fastq"])
+        cmd.extend(["-2", raw_r2])
         subprocess.run(cmd, check=True)
     else:
         preprocess_nanopore(
-            read_fastq=f"fastq/{SRR}_1.fastq",
+            read_fastq=raw_r1,
             out_prefix=f"fastq/cleaned/{SRR}",
             threads=16,
         )
