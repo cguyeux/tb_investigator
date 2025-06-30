@@ -79,7 +79,7 @@ des phages ou des éléments transposables.
   BLAST :
 
   ```bash
-  makeblastdb -in plsdb.fasta -dbtype nucl -out plsdb_db
+  makeblastdb -in plsdb.fasta -dbtype nucl -out plsdb_db -parse_seqids
   ```
 
 - **PHASTER** permet l'analyse de séquences phagiques en ligne sur
@@ -101,6 +101,8 @@ des phages ou des éléments transposables.
 Une base BLAST de séquences spécifiques de *M. tuberculosis* peut être placée
 dans `bdd/mydb`. Le script la consulte automatiquement pour la séquence
 analysée et pour chaque ORF détecté :
+Assurez-vous que cette base a été construite avec l'option `-parse_seqids` afin
+de pouvoir récupérer des entrées par leur nom.
 
 ```bash
 ./analyse_seq.py genome.fasta --tb-db bdd/mydb
