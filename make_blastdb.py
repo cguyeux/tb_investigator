@@ -85,7 +85,11 @@ def analyze_absent_regions(srr: str, bam: str, h37rv_fasta: str, rd_dir: str,
 
     # Prepare RD database
     build_rd_fasta(rd_dir, rd_fasta)
-    subprocess.run(f"makeblastdb -in {rd_fasta} -dbtype nucl -out {blast_db}", shell=True, check=True)
+    subprocess.run(
+        f"makeblastdb -in {rd_fasta} -dbtype nucl -out {blast_db} -parse_seqids",
+        shell=True,
+        check=True,
+    )
     subprocess.run(
         f"blastn -query {absent_fasta} -db {blast_db} "
         "-outfmt '6 qseqid sseqid pident length bitscore evalue qstart qend sstart send' "
@@ -342,7 +346,7 @@ def update_lineage_db(srr: str, lineage: str, mapped: str, unmapped: str) -> Non
         )
 
     subprocess.run(
-        f"makeblastdb -in {fasta_path} -dbtype nucl -out bdd/{clean}",
+        f"makeblastdb -in {fasta_path} -dbtype nucl -out bdd/{clean} -parse_seqids",
         shell=True,
         check=True,
     )
@@ -480,7 +484,9 @@ for SRR in [u for u in sra_list if u not in done]:
             concat(f"data/RD/{nom}.fasta")
         
 
-    os.system(f"makeblastdb -in data/all_contigs.fasta -dbtype nucl -out bdd/mydb")
+    os.system(
+        "makeblastdb -in data/all_contigs.fasta -dbtype nucl -out bdd/mydb -parse_seqids"
+    )
     done.append(SRR)
     with open('done.pkl', 'wb') as f:
         pickle.dump(done, f)
