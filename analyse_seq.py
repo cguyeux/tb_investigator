@@ -1609,7 +1609,7 @@ def main():
         print_header("Recherche d'ARNt avec tRNAscan-SE")
         outdir = os.path.join(args.tmpdir, "trnascan")
         gff_path = os.path.join(outdir, "trnascan.gff")
-        print(f"Commande : {args.trnascan} -j {gff_path} {args.fasta}")
+        print(f"Commande : {args.trnascan} -B -j {gff_path} {args.fasta}")
         try:
             trnas = run_trnascan(args.fasta, args.trnascan, outdir)
             if trnas:
