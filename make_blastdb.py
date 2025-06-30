@@ -4,6 +4,26 @@ import subprocess
 import unicodedata
 from typing import List
 
+
+def preprocess_nanopore(read_fastq: str, out_prefix: str, threads: int = 16) -> str:
+    """Trim ONT adapters and filter low-quality reads.
+
+    The cleaned FASTQ path is returned.
+    """
+    trimmed = f"{out_prefix}_trimmed.fastq"
+    cleaned = f"{out_prefix}_1.fastq"
+    subprocess.run(
+        f"porechop -i {read_fastq} -o {trimmed} -t {threads}",
+        shell=True,
+        check=True,
+    )
+    subprocess.run(
+        f"filtlong --min_length 1000 --min_mean_q 7 {trimmed} > {cleaned}",
+        shell=True,
+        check=True,
+    )
+    return cleaned
+
 import pandas as pd
 from Bio import SeqIO
 
@@ -358,25 +378,39 @@ with open('done.pkl', 'rb') as f:
 for SRR in [u for u in sra_list if u not in done]:
     print(f" - On téléchage {SRR} ({sra_list[SRR]})")
     os.system(f"fasterq-dump -e 16 --split-files --force --outdir fastq {SRR}")
-    print(f" - Nettoyage {SRR} ({sra_list[SRR]})")
-    cmd = [
-        "python3",
-        "preprocess_reads.py",
-        "-1",
-        f"fastq/{SRR}_1.fastq",
-        "-o",
-        f"fastq/cleaned/{SRR}",
-        "--threads",
-        "16",
-    ]
-    if os.path.exists(f"fastq/{SRR}_2.fastq"):
-        cmd.extend(["-2", f"fastq/{SRR}_2.fastq"])
 
-    subprocess.run(cmd, check=True)
+    paired = os.path.exists(f"fastq/{SRR}_2.fastq")
+    print(f" - Nettoyage {SRR} ({sra_list[SRR]})")
+
+    if paired:
+        cmd = [
+            "python3",
+            "preprocess_reads.py",
+            "-1",
+            f"fastq/{SRR}_1.fastq",
+            "-o",
+            f"fastq/cleaned/{SRR}",
+            "--threads",
+            "16",
+        ]
+        cmd.extend(["-2", f"fastq/{SRR}_2.fastq"])
+        subprocess.run(cmd, check=True)
+    else:
+        preprocess_nanopore(
+            read_fastq=f"fastq/{SRR}_1.fastq",
+            out_prefix=f"fastq/cleaned/{SRR}",
+            threads=16,
+        )
+
     print(f" - On aligne {SRR} ({sra_list[SRR]})")
-    os.system(
-        f"bwa mem -t 16 data/H37Rv.fasta fastq/cleaned/{SRR}_1.fastq fastq/cleaned/{SRR}_2.fastq > alignments/{SRR}.sam"
-    )
+    if paired:
+        os.system(
+            f"bwa mem -t 16 data/H37Rv.fasta fastq/cleaned/{SRR}_1.fastq fastq/cleaned/{SRR}_2.fastq > alignments/{SRR}.sam"
+        )
+    else:
+        os.system(
+            f"bwa mem -x ont2d -t 16 data/H37Rv.fasta fastq/cleaned/{SRR}_1.fastq > alignments/{SRR}.sam"
+        )
     os.system(f"samtools view -bS alignments/{SRR}.sam | samtools sort -o alignments/{SRR}_sorted.bam")
     os.system(f"rm -f alignments/{SRR}.sam")
     os.system(f"samtools index alignments/{SRR}_sorted.bam")
@@ -388,17 +422,27 @@ for SRR in [u for u in sra_list if u not in done]:
         rd_dir="data/RD",
     )
 
-    # Extraction en BAM des reads non mappés (les deux mates non mappés)
-    os.system(f"samtools view -b -f 12 -F 256 alignments/{SRR}_sorted.bam > unmapped/{SRR}_unmapped.bam")
-    # Extraction en fastq directement avec samtools
-    os.system(f"samtools fastq -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -0 /dev/null -s /dev/null -n unmapped/{SRR}_unmapped.bam")
-    # Assemblage unmapped
-    outdir = f"assemblies_unmapped/{SRR}"
-    contigs = f"contigs_unmapped/{SRR}_unmapped_contigs.fasta"
-    k_values = choose_k_values(f"unmapped/{SRR}_unmapped_1.fastq")
-    os.system(
-        f"spades.py --careful -t 16 --cov-cutoff auto -k {k_values} -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -o {outdir}"
-    )
+    if paired:
+        # Extraction en BAM des reads non mappés (les deux mates non mappés)
+        os.system(f"samtools view -b -f 12 -F 256 alignments/{SRR}_sorted.bam > unmapped/{SRR}_unmapped.bam")
+        # Extraction en fastq directement avec samtools
+        os.system(
+            f"samtools fastq -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -0 /dev/null -s /dev/null -n unmapped/{SRR}_unmapped.bam"
+        )
+        outdir = f"assemblies_unmapped/{SRR}"
+        contigs = f"contigs_unmapped/{SRR}_unmapped_contigs.fasta"
+        k_values = choose_k_values(f"unmapped/{SRR}_unmapped_1.fastq")
+        os.system(
+            f"spades.py --careful -t 16 --cov-cutoff auto -k {k_values} -1 unmapped/{SRR}_unmapped_1.fastq -2 unmapped/{SRR}_unmapped_2.fastq -o {outdir}"
+        )
+    else:
+        os.system(f"samtools view -b -f 4 alignments/{SRR}_sorted.bam > unmapped/{SRR}_unmapped.bam")
+        os.system(f"samtools fastq unmapped/{SRR}_unmapped.bam > unmapped/{SRR}_unmapped_1.fastq")
+        outdir = f"assemblies_unmapped/{SRR}"
+        contigs = f"contigs_unmapped/{SRR}_unmapped_contigs.fasta"
+        os.system(
+            f"spades.py --careful -t 16 --cov-cutoff auto --nanopore unmapped/{SRR}_unmapped_1.fastq -o {outdir}"
+        )
     assembled = f"{outdir}/contigs.fasta"
     if os.path.exists(assembled):
         os.rename(assembled, contigs)
@@ -411,24 +455,31 @@ for SRR in [u for u in sra_list if u not in done]:
     mapped_bam = f"mapped/{SRR}_mapped.bam"
     if not os.path.exists(mapped_bam):
         os.system(f"samtools view -b -F 4 {sorted_bam} > {mapped_bam}")
-    
-    # 2) conversion en FASTQ
+
     mapped_fastq1 = f"mapped/{SRR}_mapped_1.fastq"
     mapped_fastq2 = f"mapped/{SRR}_mapped_2.fastq"
-    if not (os.path.exists(mapped_fastq1) and os.path.exists(mapped_fastq2)):
-        os.system(
-            f"samtools fastq -1 {mapped_fastq1} -2 {mapped_fastq2} "
-            f"-0 /dev/null -s /dev/null -n {mapped_bam}"
-        )
-    
+    if paired:
+        if not (os.path.exists(mapped_fastq1) and os.path.exists(mapped_fastq2)):
+            os.system(
+                f"samtools fastq -1 {mapped_fastq1} -2 {mapped_fastq2} -0 /dev/null -s /dev/null -n {mapped_bam}"
+            )
+    else:
+        if not os.path.exists(mapped_fastq1):
+            os.system(f"samtools fastq {mapped_bam} > {mapped_fastq1}")
+
     # 3) assemblage SPAdes
     outdir_m = f"assemblies_mapped/{SRR}"
     contigs_m = f"contigs_mapped/{SRR}_mapped_contigs.fasta"
     if not os.path.exists(contigs_m):
-        k_values = choose_k_values(mapped_fastq1)
-        os.system(
-            f"spades.py -k {k_values} -1 {mapped_fastq1} -2 {mapped_fastq2} -o {outdir_m}"
-        )
+        if paired:
+            k_values = choose_k_values(mapped_fastq1)
+            os.system(
+                f"spades.py -k {k_values} -1 {mapped_fastq1} -2 {mapped_fastq2} -o {outdir_m}"
+            )
+        else:
+            os.system(
+                f"spades.py --careful -t 16 --cov-cutoff auto --nanopore {mapped_fastq1} -o {outdir_m}"
+            )
         assembled_m = f"{outdir_m}/contigs.fasta"
         if os.path.exists(assembled_m):
             os.rename(assembled_m, contigs_m)

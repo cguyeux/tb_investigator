@@ -24,6 +24,19 @@ pip install cutadapt
 This will produce `trimmed/sample_1.fastq` and `trimmed/sample_2.fastq` with
 adapter sequences removed and low-quality bases trimmed.
 
+### Nanopore reads
+
+For Oxford Nanopore sequencing data, adapter trimming and quality filtering are
+handled by **Porechop** and **Filtlong** instead of cutadapt:
+
+```bash
+porechop -i reads.fastq -o trimmed.fastq -t 16
+filtlong --min_length 1000 --min_mean_q 7 trimmed.fastq > cleaned.fastq
+```
+
+The script `make_blastdb.py` automatically runs these tools when only a single
+FASTQ file is downloaded for an accession.
+
 ## Assemblage avec SPAdes
 
 Le script `make_blastdb.py` assemble les lectures non mappées et mappées avec
