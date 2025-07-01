@@ -614,6 +614,9 @@ for SRR in [u for u in sra_list if u not in done]:
             concat(f"data/RD/{nom}.fasta")
         
 
+    # Sanitize headers and ensure unique identifiers before creating the
+    # consolidated BLAST database
+    deduplicate_fasta("data/all_contigs.fasta")
     os.system(
         "makeblastdb -in data/all_contigs.fasta -dbtype nucl -out bdd/mydb -parse_seqids"
     )
