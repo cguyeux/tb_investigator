@@ -81,6 +81,42 @@ def sanitize_header(header: str) -> str:
     return header
 
 
+def deduplicate_fasta(fasta_path: str) -> None:
+    """Ensure sequence identifiers are unique in ``fasta_path``."""
+
+    if not os.path.exists(fasta_path):
+        return
+
+    entries = []
+    header = None
+    seq_lines = []
+
+    with open(fasta_path) as fh:
+        last = None
+        for line in fh:
+            last = line
+            if line.startswith(">"):
+                if header is not None:
+                    entries.append((header, "".join(seq_lines)))
+                header = sanitize_header(line[1:].split()[0])
+                seq_lines = []
+            else:
+                seq_lines.append(line)
+        if header is not None:
+            entries.append((header, "".join(seq_lines)))
+        if last is not None and not last.endswith("\n"):
+            entries[-1] = (entries[-1][0], entries[-1][1] + "\n")
+
+    counts = {}
+    with open(fasta_path, "w") as out:
+        for head, seq in entries:
+            idx = counts.get(head, 0)
+            counts[head] = idx + 1
+            clean = head if idx == 0 else f"{head}_{idx+1}"
+            out.write(f">{clean}\n")
+            out.write(seq)
+
+
 def build_rd_fasta(rd_dir: str, rd_fasta: str) -> None:
     """Concatenate all RD FASTA files found in ``rd_dir``.
     Headers are sanitized to avoid non-ASCII characters."""
@@ -398,6 +434,9 @@ def update_lineage_db(srr: str, lineage: str, mapped: str, unmapped: str) -> Non
             motif_source=">NODE_",
             motif_cible=f">{srr}_{header_lineage}_mapped_NODE_",
         )
+
+    # Ensure each sequence ID is unique before running makeblastdb
+    deduplicate_fasta(fasta_path)
 
     subprocess.run(
         f"makeblastdb -in {fasta_path} -dbtype nucl -out bdd/{clean} -parse_seqids",

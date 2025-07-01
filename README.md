@@ -57,6 +57,10 @@ lors de l'exécution de `makeblastdb`. Les caractères non ASCII comme `Δ`
 ou les espaces sont ainsi éliminés et les doublons reçoivent un suffixe
 numéroté.
 
+Cette étape de normalisation et de déduplication est aussi appliquée lors
+de la mise à jour des bases BLAST par sous-lignée afin d'éviter toute
+collision d'identifiants.
+
 Lors de la mise à jour des bases BLAST par sous-lignée, les noms de
 ligneages sont eux aussi "nettoyés" en remplaçant notamment les espaces
 par des underscores afin que chaque contig ajouté possède un identifiant
