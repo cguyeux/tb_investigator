@@ -81,8 +81,17 @@ def sanitize_header(header: str) -> str:
     return header
 
 
+MAX_ID_LENGTH = 50
+
+
 def deduplicate_fasta(fasta_path: str) -> None:
-    """Ensure sequence identifiers are unique in ``fasta_path``."""
+    """Ensure sequence identifiers are unique and short enough for ``makeblastdb``.
+
+    ``makeblastdb`` refuses headers longer than 50 characters. This function
+    sanitizes identifiers, deduplicates them and truncates the final name so
+    that its length never exceeds ``MAX_ID_LENGTH``. When truncation leads to
+    duplicate identifiers, numerical suffixes are appended automatically.
+    """
 
     if not os.path.exists(fasta_path):
         return
@@ -107,13 +116,28 @@ def deduplicate_fasta(fasta_path: str) -> None:
         if last is not None and not last.endswith("\n"):
             entries[-1] = (entries[-1][0], entries[-1][1] + "\n")
 
+    # First pass to generate unique names based on the raw headers
     counts = {}
+    unique = []
+    for head, seq in entries:
+        idx = counts.get(head, 0)
+        counts[head] = idx + 1
+        new = head if idx == 0 else f"{head}_{idx+1}"
+        unique.append((new, seq))
+
+    # Second pass to enforce ``MAX_ID_LENGTH`` while keeping identifiers unique
+    final_counts = {}
     with open(fasta_path, "w") as out:
-        for head, seq in entries:
-            idx = counts.get(head, 0)
-            counts[head] = idx + 1
-            clean = head if idx == 0 else f"{head}_{idx+1}"
-            out.write(f">{clean}\n")
+        for head, seq in unique:
+            truncated = head[:MAX_ID_LENGTH]
+            idx = final_counts.get(truncated, 0)
+            final_counts[truncated] = idx + 1
+            if idx:
+                base = truncated[: MAX_ID_LENGTH - len(str(idx + 1)) - 1]
+                final = f"{base}_{idx + 1}"
+            else:
+                final = truncated
+            out.write(f">{final}\n")
             out.write(seq)
 
 
@@ -136,6 +160,7 @@ def build_rd_fasta(rd_dir: str, rd_fasta: str) -> None:
                         idx = counts.get(base, 0)
                         counts[base] = idx + 1
                         clean = base if idx == 0 else f"{base}_{idx+1}"
+                        clean = clean[:MAX_ID_LENGTH]
                         out.write(f">{clean}\n")
                     else:
                         out.write(line)
