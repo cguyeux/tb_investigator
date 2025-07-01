@@ -57,6 +57,11 @@ lors de l'exécution de `makeblastdb`. Les caractères non ASCII comme `Δ`
 ou les espaces sont ainsi éliminés et les doublons reçoivent un suffixe
 numéroté.
 
+Lors de la mise à jour des bases BLAST par sous-lignée, les noms de
+ligneages sont eux aussi "nettoyés" en remplaçant notamment les espaces
+par des underscores afin que chaque contig ajouté possède un identifiant
+unique compris par `makeblastdb`.
+
 La base BLAST finale est écrite dans le répertoire `bdd/` sous le nom
 `mydb` pour éviter de créer des fichiers à la racine du projet.
 
