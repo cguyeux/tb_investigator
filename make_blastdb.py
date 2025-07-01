@@ -378,6 +378,7 @@ def update_lineage_db(srr: str, lineage: str, mapped: str, unmapped: str) -> Non
 
     clean = lineage.replace(" ", "")
     fasta_path = os.path.join("bdd", f"{clean}.fasta")
+    header_lineage = sanitize_header(lineage)
 
     existing = ""
     if os.path.exists(fasta_path):
@@ -389,13 +390,13 @@ def update_lineage_db(srr: str, lineage: str, mapped: str, unmapped: str) -> Non
             unmapped,
             fasta_path,
             motif_source=">NODE_",
-            motif_cible=f">{srr}_{lineage}_unmapped_NODE_",
+            motif_cible=f">{srr}_{header_lineage}_unmapped_NODE_",
         )
         append_to_fasta(
             mapped,
             fasta_path,
             motif_source=">NODE_",
-            motif_cible=f">{srr}_{lineage}_mapped_NODE_",
+            motif_cible=f">{srr}_{header_lineage}_mapped_NODE_",
         )
 
     subprocess.run(
