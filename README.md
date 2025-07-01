@@ -68,6 +68,9 @@ unique compris par `makeblastdb`.
 
 La base BLAST finale est écrite dans le répertoire `bdd/` sous le nom
 `mydb` pour éviter de créer des fichiers à la racine du projet.
+Avant cette étape finale, les en-têtes de `data/all_contigs.fasta` sont
+également nettoyés et dédupliqués pour garantir l'absence de conflits
+`makeblastdb`.
 
 ## Calcul du taux de GC
 
