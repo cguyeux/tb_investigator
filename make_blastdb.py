@@ -463,6 +463,10 @@ def update_lineage_db(srr: str, lineage: str, mapped: str, unmapped: str) -> Non
     # Ensure each sequence ID is unique before running makeblastdb
     deduplicate_fasta(fasta_path)
 
+    # Skip database creation if nothing was appended
+    if not os.path.exists(fasta_path) or os.path.getsize(fasta_path) == 0:
+        return
+
     subprocess.run(
         f"makeblastdb -in {fasta_path} -dbtype nucl -out bdd/{clean} -parse_seqids",
         shell=True,
