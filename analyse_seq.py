@@ -596,7 +596,7 @@ def run_trnascan(fasta: str, trnascan: str, outdir: str) -> List[Dict[str, Any]]
 
     os.makedirs(outdir, exist_ok=True)
     gff = os.path.join(outdir, "trnascan.gff")
-    cmd = [trnascan, "-j", gff, fasta]
+    cmd = [trnascan, "-B", "-Q", "-j", gff, fasta]
     try:
         result = subprocess.run(
             cmd,
